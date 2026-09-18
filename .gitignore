@@ -1,0 +1,7 @@
+/target
+.crumb.local
+*.swp
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
