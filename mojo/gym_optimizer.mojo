@@ -81,7 +81,7 @@ def simulate_session(
 
 def main() raises:
     if len(argv()) < 8:
-        print("Usage: gym_optimizer.mojo <stat> <start_stat> <start_happy> <energy_total> <energy_per_train> <gym_dots> <perk_mult>")
+        print("Usage: gym_optimizer.mojo <stat> <start_stat> <start_happy> <energy_total> <energy_per_train> <gym_dots> <perk_mult> [loss_per_train] [min_happy]")
         print("Demo run:")
         var res = simulate_session("strength", 1000000.0, 5000.0, 1000.0, 5.0, 7.3, 1.0, 2.5, 0.0)
         print("Trains:", res[0])
@@ -99,8 +99,15 @@ def main() raises:
     var perk_mult = Float64(argv()[7])
 
     var loss_per_train = 0.5 * energy_per_train
+    if len(argv()) > 8:
+        loss_per_train = Float64(argv()[8])
+
+    var min_h: Float64 = 0.0
+    if len(argv()) > 9:
+        min_h = Float64(argv()[9])
+
     var res = simulate_session(
-        stat_name, start_stat, start_happy, energy_available, energy_per_train, gym_dots, perk_mult, loss_per_train, 0.0
+        stat_name, start_stat, start_happy, energy_available, energy_per_train, gym_dots, perk_mult, loss_per_train, min_h
     )
 
     print("{")

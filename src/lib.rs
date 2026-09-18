@@ -2,6 +2,7 @@
 
 pub mod gym;
 pub mod payout;
+pub mod reconcile;
 pub mod server;
 pub mod storage;
 pub mod torn;

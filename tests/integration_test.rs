@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use mobhub::gym::{SessionParams, StatName};
 use mobhub::payout::{MemberInput, PayoutModel, PayoutOptions, PayoutPolicy};
+use mobhub::reconcile::{GiveForMatch, RegisterRowForMatch};
 use mobhub::server::{create_router, AppState};
 use mobhub::storage::Database;
 use mobhub::torn::TornClient;
@@ -161,4 +162,57 @@ async fn test_full_router_integration() {
     let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let gym_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(gym_json["trains"], 10);
+
+    // 6. Reconcile parse endpoint
+    let news_payload = json!({
+        "news": [{
+            "id": "1001",
+            "timestamp": 1720000000,
+            "text": "<a href=\"profiles.php?XID=100\">Banker</a> increased <a href=\"profiles.php?XID=2532285\">MrRazorlove</a>'s money balance by $74,978,810 from $0 to $74,978,810."
+        }]
+    });
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/reconcile/parse")
+                .header("Content-Type", "application/json")
+                .body(Body::from(news_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let parsed_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(parsed_json.as_array().unwrap().len(), 1);
+    assert_eq!(parsed_json[0]["amount"], 74978810);
+
+    // 7. Reconcile match endpoint
+    let match_payload = json!({
+        "gives": [
+            GiveForMatch { news_id: "1001".to_string(), recipient_torn_id: 2532285, amount: 74978810, occurred_at: None }
+        ],
+        "register": [
+            RegisterRowForMatch { id: 1, torn_id: 2532285, amount_owed: 74978810, paid: false }
+        ]
+    });
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/reconcile/match")
+                .header("Content-Type", "application/json")
+                .body(Body::from(match_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let match_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(match_json["matched"], 1);
+    assert_eq!(match_json["decisions"][0]["matched_register_id"], 1);
 }

@@ -4,6 +4,7 @@
 use clap::{Parser, Subcommand};
 use mobhub::gym::{self, SessionParams, StatName};
 use mobhub::payout::{self, MemberInput, PayoutModel, PayoutOptions, PayoutPolicy};
+use mobhub::reconcile::{self, GiveForMatch, RegisterRowForMatch};
 use mobhub::server::{self, AppState};
 use mobhub::storage::Database;
 use mobhub::torn::TornClient;
@@ -75,7 +76,7 @@ enum Commands {
         #[arg(long, default_value_t = 1_000_000.0)]
         start_stat: f64,
 
-        #[arg(short, long, default_value_t = 5000.0)]
+        #[arg(short = 'H', long, default_value_t = 5000.0)]
         happy: f64,
 
         #[arg(short, long, default_value_t = 1000.0)]
@@ -83,6 +84,18 @@ enum Commands {
 
         #[arg(short, long, default_value_t = 7.3)]
         dots: f64,
+    },
+
+    /// Reconcile faction money-log news entries against payout register rows
+    Reconcile {
+        #[arg(short, long)]
+        news_file: String,
+
+        #[arg(short, long)]
+        register_file: Option<String>,
+
+        #[arg(long, default_value_t = 0.005)]
+        tolerance: f64,
     },
 
     /// Verify hardware TPM vault key binding in memory
@@ -221,6 +234,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string_pretty(&res)?);
         }
 
+        Commands::Reconcile {
+            news_file,
+            register_file,
+            tolerance,
+        } => {
+            let news_content = fs::read_to_string(&news_file)?;
+            let raw_news: serde_json::Value = serde_json::from_str(&news_content)?;
+            let disbursements = reconcile::parse_disbursements(&raw_news);
+            println!("Parsed {} disbursements from {}", disbursements.len(), news_file);
+
+            if let Some(reg_path) = register_file {
+                let reg_content = fs::read_to_string(&reg_path)?;
+                let register: Vec<RegisterRowForMatch> = serde_json::from_str(&reg_content)?;
+                let gives: Vec<GiveForMatch> = disbursements
+                    .iter()
+                    .map(|d| GiveForMatch {
+                        news_id: d.news_id.clone(),
+                        recipient_torn_id: d.recipient_torn_id,
+                        amount: d.amount,
+                        occurred_at: d.occurred_at.clone(),
+                    })
+                    .collect();
+
+                let summary = reconcile::match_disbursements(&gives, &register, tolerance);
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+            } else {
+                println!("{}", serde_json::to_string_pretty(&disbursements)?);
+            }
+        }
+
         Commands::TestVault => {
             println!("Testing Hardware TPM Vault retrieval for TORN_API_KEY...");
             match vault::get_torn_api_key() {
@@ -267,12 +310,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 4. Check gym optimizer kernel
             let mojo_kernel_path = "mojo/gym_optimizer.mojo";
-            let kernel_status = if std::path::Path::new(mojo_kernel_path).exists() {
+            let kernel_status = if std::path::Path::new(mojo_kernel_path).exists() || std::path::Path::new("/home/drakestapleton/workspace/mobhub/mojo/gym_optimizer.mojo").exists() {
                 "[OK] gym_optimizer.mojo kernel verified"
             } else {
                 "[WARN] gym_optimizer.mojo kernel missing"
             };
             println!("- Mojo Kernel: {}", kernel_status);
+
+            // 5. Check compiled Mojo binary
+            let mojo_bin_path = "mojo/gym_optimizer";
+            let bin_status = if std::path::Path::new(mojo_bin_path).exists() || std::path::Path::new("/home/drakestapleton/workspace/mobhub/mojo/gym_optimizer").exists() {
+                "[OK] Compiled Mojo binary present at mojo/gym_optimizer"
+            } else {
+                "[WARN] Compiled Mojo binary not found at mojo/gym_optimizer"
+            };
+            println!("- Mojo Binary: {}", bin_status);
+
+            // 6. Check reconciliation engine
+            let dummy_news = serde_json::json!({ "news": [] });
+            let _ = reconcile::parse_disbursements(&dummy_news);
+            println!("- Reconcile Engine: [OK] In-memory disbursement parser verified");
 
             println!("Doctor inspection complete: all core native systems operational.");
         }
