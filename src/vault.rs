@@ -2,9 +2,12 @@
 //! Guarantees zero plaintext secret files on disk.
 
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
 static CACHED_TORN_KEY: OnceLock<Option<String>> = OnceLock::new();
+static KEY_PARAM_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"key=[^&\s]+").expect("Failed to compile KEY_PARAM_RE regex")
+});
 
 /// Dynamically resolve a secret token.
 /// Checks hardware TPM vault first (atlas-vault get <KEY>), then falls back to in-memory environment.
@@ -50,20 +53,11 @@ pub fn redact_secrets(input: &str) -> String {
             sanitized = sanitized.replace(&key, "[REDACTED_BY_ATLAS_VAULT]");
         }
     }
-    // Also redact any potential query param pattern like key=XXXXX
-    let re_pattern = "key=";
-    if let Some(idx) = sanitized.find(re_pattern) {
-        let after = &sanitized[idx + 4..];
-        let end = after.find('&').unwrap_or(after.len());
-        let secret_slice = &after[..end];
-        if !secret_slice.is_empty() {
-            sanitized = sanitized.replace(
-                &format!("key={}", secret_slice),
-                "key=[REDACTED_BY_ATLAS_VAULT]",
-            );
-        }
-    }
-    sanitized
+
+    // Actively redact all key=query parameters across the entire input stream
+    KEY_PARAM_RE
+        .replace_all(&sanitized, "key=[REDACTED_BY_ATLAS_VAULT]")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -72,9 +66,10 @@ mod tests {
 
     #[test]
     fn test_secret_redaction() {
-        let raw = "GET https://api.torn.com/v2/faction/rankedwars?key=abcdef123456&limit=10";
+        let raw = "GET https://api.torn.com/v2/faction/rankedwars?key=abcdef123456&limit=10 and retry key=9876543210zyx";
         let redacted = redact_secrets(raw);
         assert!(!redacted.contains("abcdef123456"));
-        assert!(redacted.contains("[REDACTED_BY_ATLAS_VAULT]"));
+        assert!(!redacted.contains("9876543210zyx"));
+        assert_eq!(redacted.matches("[REDACTED_BY_ATLAS_VAULT]").count(), 2);
     }
 }

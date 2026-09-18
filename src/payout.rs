@@ -32,6 +32,8 @@ pub struct PayoutPolicy {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PayoutOptions {
     pub flat_bonus_per_member: Option<i64>,
+    #[serde(default)]
+    pub reconcile_drift: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,9 +86,9 @@ pub struct PayoutResult {
 }
 
 pub fn payable_hits_of(m: &MemberInput, p: &PayoutPolicy) -> f64 {
-    (m.war_hits as f64) * p.weight_war_hit
-        + (m.assists as f64) * p.weight_assist
-        + (m.outside_hits as f64) * p.weight_outside_hit
+    ((m.war_hits.max(0)) as f64) * p.weight_war_hit.max(0.0)
+        + ((m.assists.max(0)) as f64) * p.weight_assist.max(0.0)
+        + ((m.outside_hits.max(0)) as f64) * p.weight_outside_hit.max(0.0)
 }
 
 fn round_to_i64(n: f64) -> i64 {
@@ -102,10 +104,15 @@ pub fn compute_payout(
 ) -> PayoutResult {
     let mut warnings = Vec::new();
 
+    let safe_cache = cache_value.max(0);
+    let split_members_pct = policy.split_members_pct.clamp(0.0, 1.0);
+    let split_faction_pct = policy.split_faction_pct.clamp(0.0, 1.0);
+    let split_leadership_pct = policy.split_leadership_pct.clamp(0.0, 1.0);
+
     let raw_bonus = options.flat_bonus_per_member.unwrap_or(0);
     let flat_bonus_per_member = raw_bonus.max(0);
 
-    let split_sum = policy.split_members_pct + policy.split_faction_pct + policy.split_leadership_pct;
+    let split_sum = split_members_pct + split_faction_pct + split_leadership_pct;
     if (split_sum - 1.0).abs() > 1e-4 {
         warnings.push(format!(
             "Splits sum to {:.4}, not 1.0; check policy configuration.",
@@ -113,17 +120,17 @@ pub fn compute_payout(
         ));
     }
 
-    let faction_fund = round_to_i64((cache_value as f64) * policy.split_faction_pct);
-    let leadership_fund = round_to_i64((cache_value as f64) * policy.split_leadership_pct);
-    let members_pool = (cache_value as f64) * policy.split_members_pct;
+    let faction_fund = round_to_i64((safe_cache as f64) * split_faction_pct);
+    let leadership_fund = round_to_i64((safe_cache as f64) * split_leadership_pct);
+    let members_pool = (safe_cache as f64) * split_members_pct;
 
-    let recipient_id = if policy.split_leadership_pct > 0.0 {
+    let recipient_id = if split_leadership_pct > 0.0 {
         policy.leadership_recipient_torn_id
     } else {
         None
     };
 
-    if policy.split_leadership_pct > 0.0 && recipient_id.is_none() {
+    if split_leadership_pct > 0.0 && recipient_id.is_none() {
         warnings.push("Leadership split > 0 but no leadership recipient is configured.".to_string());
     }
 
@@ -149,12 +156,12 @@ pub fn compute_payout(
         let b_total_f64: f64 = dist_members
             .iter()
             .map(|m| {
-                (m.outside_hits as f64) * policy.rate_per_outside_hit
-                    + (m.assists as f64) * policy.rate_per_assist
+                ((m.outside_hits.max(0)) as f64) * policy.rate_per_outside_hit
+                    + ((m.assists.max(0)) as f64) * policy.rate_per_assist
             })
             .sum();
         bonus_total = round_to_i64(b_total_f64);
-        total_flat_respect = dist_members.iter().map(|m| m.flat_respect).sum();
+        total_flat_respect = dist_members.iter().map(|m| m.flat_respect.max(0.0)).sum();
 
         let rate = if policy.use_fixed_respect_rate.unwrap_or(false) {
             policy.rate_per_respect
@@ -173,9 +180,9 @@ pub fn compute_payout(
 
         for m in &dist_members {
             let base = round_to_i64(
-                m.flat_respect * rate
-                    + (m.outside_hits as f64) * policy.rate_per_outside_hit
-                    + (m.assists as f64) * policy.rate_per_assist,
+                m.flat_respect.max(0.0) * rate
+                    + ((m.outside_hits.max(0)) as f64) * policy.rate_per_outside_hit
+                    + ((m.assists.max(0)) as f64) * policy.rate_per_assist,
             );
             out.push(MemberPayout {
                 torn_id: m.torn_id,
@@ -217,6 +224,41 @@ pub fn compute_payout(
                 flat_bonus: 0,
                 amount: base,
             });
+        }
+    }
+
+    // Zero-drift remainder reconciliation when enabled or default in PoolShare
+    let should_reconcile = options.reconcile_drift.unwrap_or(policy.model == PayoutModel::PoolShare);
+    if should_reconcile && !out.is_empty() && (total_payable_hits > 0.0 || policy.model == PayoutModel::FlatRate) {
+        let pool_target = round_to_i64(members_pool);
+        let current_pool_sum: i64 = out.iter().map(|m| m.base_amount).sum();
+        let drift = pool_target - current_pool_sum;
+
+        if drift != 0 {
+            let mut indices: Vec<usize> = (0..out.len()).collect();
+            indices.sort_by(|&a, &b| {
+                out[b].payable_hits.partial_cmp(&out[a].payable_hits)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| out[a].torn_id.cmp(&out[b].torn_id))
+            });
+
+            if drift > 0 {
+                let n = drift as usize;
+                for i in 0..n {
+                    let idx = indices[i % indices.len()];
+                    out[idx].base_amount += 1;
+                    out[idx].amount += 1;
+                }
+            } else {
+                let n = (-drift) as usize;
+                for i in 0..n {
+                    let idx = indices[i % indices.len()];
+                    if out[idx].base_amount > 0 {
+                        out[idx].base_amount -= 1;
+                        out[idx].amount -= 1;
+                    }
+                }
+            }
         }
     }
 
@@ -287,7 +329,7 @@ pub fn compute_payout(
 
     PayoutResult {
         model: policy.model,
-        cache_value,
+        cache_value: safe_cache,
         members_pool: round_to_i64(members_pool),
         faction_fund,
         leadership_fund,
@@ -317,7 +359,7 @@ pub fn make_give_money_url(_faction_id: i64, recipient_id: i64, amount: i64) -> 
 /// Exports payout result to standard CSV format.
 pub fn export_payout_csv(result: &PayoutResult, faction_id: i64) -> String {
     let mut wtr = csv::Writer::from_writer(vec![]);
-    let _ = wtr.write_record(&[
+    let _ = wtr.write_record([
         "Torn ID",
         "Name",
         "Role",
@@ -330,12 +372,12 @@ pub fn export_payout_csv(result: &PayoutResult, faction_id: i64) -> String {
         "Leadership Bonus",
         "Flat Bonus",
         "Total Amount",
-        "Give Money Link",
+        "Torn Give Link",
     ]);
 
     for m in &result.members {
         let name_str = m.name.clone().unwrap_or_default();
-        let link = make_give_money_url(faction_id, m.torn_id, m.amount);
+        let give_link = make_give_money_url(faction_id, m.torn_id, m.amount);
         let _ = wtr.write_record(&[
             m.torn_id.to_string(),
             name_str,
@@ -349,7 +391,7 @@ pub fn export_payout_csv(result: &PayoutResult, faction_id: i64) -> String {
             m.leadership_bonus.to_string(),
             m.flat_bonus.to_string(),
             m.amount.to_string(),
-            link,
+            give_link,
         ]);
     }
 
@@ -467,6 +509,28 @@ mod tests {
         assert_eq!(r.members.iter().find(|m| m.torn_id == 1).unwrap().amount, 750000);
         assert_eq!(r.members.iter().find(|m| m.torn_id == 2).unwrap().amount, 250000);
         assert_eq!(r.member_payout_total, 1000000);
+        assert_eq!(r.unallocated, 0);
+    }
+
+    #[test]
+    fn test_pool_share_drift_reconciliation() {
+        let mut policy = default_flat_policy();
+        policy.model = PayoutModel::PoolShare;
+
+        // 3 members sharing $80 (100 * 0.8) equally: 80 / 3 = 26.666...
+        // Unreconciled integer rounding gives 27 + 27 + 27 = 81 (drift -1).
+        // With reconciliation, sum is exactly 80 and unallocated is 0.
+        let members = vec![
+            MemberInput { torn_id: 1, name: Some("A".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput { torn_id: 2, name: Some("B".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput { torn_id: 3, name: Some("C".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+        ];
+
+        let r = compute_payout(100, &policy, &members, &PayoutOptions::default());
+        assert_eq!(r.members_pool, 80);
+        assert_eq!(r.unallocated, 0);
+        let total_distributed: i64 = r.members.iter().map(|m| m.amount).sum();
+        assert_eq!(total_distributed, 80);
     }
 
     #[test]
@@ -506,7 +570,7 @@ mod tests {
             MemberInput { torn_id: 4, name: Some("NoShow".to_string()), flat_respect: 0.0, war_hits: 0, assists: 0, outside_hits: 0, is_leadership: None },
         ];
 
-        let opts = PayoutOptions { flat_bonus_per_member: Some(5000) };
+        let opts = PayoutOptions { flat_bonus_per_member: Some(5000), reconcile_drift: None };
         let r = compute_payout(1000000, &policy, &members, &opts);
 
         assert_eq!(r.members.iter().find(|m| m.torn_id == 1).unwrap().flat_bonus, 5000);

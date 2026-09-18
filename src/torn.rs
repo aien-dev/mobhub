@@ -219,6 +219,24 @@ impl TornClient {
     pub async fn get_bounties(&self) -> Result<serde_json::Value, TornError> {
         self.get("/torn/bounties", true).await
     }
+
+    pub async fn get_faction_news(
+        &self,
+        category: &str,
+        from_unix: Option<i64>,
+        to_unix: Option<i64>,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value, TornError> {
+        let lim = limit.unwrap_or(100);
+        let mut path = format!("/faction/news?cat={}&limit={}", category, lim);
+        if let Some(from) = from_unix {
+            path.push_str(&format!("&from={}", from));
+        }
+        if let Some(to) = to_unix {
+            path.push_str(&format!("&to={}", to));
+        }
+        self.get(&path, false).await
+    }
 }
 
 #[cfg(test)]
@@ -235,5 +253,15 @@ mod tests {
 
         let res = client.get_ranked_wars().await.unwrap();
         assert_eq!(res["wars"][0], 40711);
+
+        client
+            .set_mock_response(
+                "/faction/news?cat=depositFunds&limit=100",
+                json!({ "news": [{ "id": "1", "text": "deposited" }] }),
+            )
+            .await;
+
+        let news = client.get_faction_news("depositFunds", None, None, None).await.unwrap();
+        assert_eq!(news["news"][0]["id"], "1");
     }
 }

@@ -26,6 +26,20 @@ pub struct StoredBalance {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StoredDisbursement {
+    pub id: i64,
+    pub war_id: Option<i64>,
+    pub news_id: String,
+    pub recipient_torn_id: i64,
+    pub recipient_name: Option<String>,
+    pub amount: i64,
+    pub occurred_at: Option<String>,
+    pub matched_register_id: Option<i64>,
+    pub raw_text: String,
+    pub created_at: String,
+}
+
 impl Database {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -65,6 +79,19 @@ impl Database {
                 war_id INTEGER PRIMARY KEY,
                 policy_json TEXT NOT NULL,
                 result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS payout_disbursements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                war_id INTEGER,
+                news_id TEXT UNIQUE NOT NULL,
+                recipient_torn_id INTEGER NOT NULL,
+                recipient_name TEXT,
+                amount INTEGER NOT NULL,
+                occurred_at TEXT,
+                matched_register_id INTEGER,
+                raw_text TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
 
@@ -184,6 +211,81 @@ impl Database {
         }
     }
 
+    pub fn save_disbursement(
+        &self,
+        news_id: &str,
+        war_id: Option<i64>,
+        recipient_torn_id: i64,
+        recipient_name: Option<&str>,
+        amount: i64,
+        occurred_at: Option<&str>,
+        matched_register_id: Option<i64>,
+        raw_text: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO payout_disbursements (war_id, news_id, recipient_torn_id, recipient_name, amount, occurred_at, matched_register_id, raw_text, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(news_id) DO UPDATE SET
+                war_id = excluded.war_id,
+                matched_register_id = excluded.matched_register_id",
+            params![war_id, news_id, recipient_torn_id, recipient_name, amount, occurred_at, matched_register_id, raw_text, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_disbursements(&self, war_id: Option<i64>) -> Result<Vec<StoredDisbursement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut out = Vec::new();
+        if let Some(wid) = war_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, war_id, news_id, recipient_torn_id, recipient_name, amount, occurred_at, matched_register_id, raw_text, created_at
+                 FROM payout_disbursements WHERE war_id = ?1 ORDER BY id DESC"
+            )?;
+            let rows = stmt.query_map(params![wid], |row| {
+                Ok(StoredDisbursement {
+                    id: row.get(0)?,
+                    war_id: row.get(1)?,
+                    news_id: row.get(2)?,
+                    recipient_torn_id: row.get(3)?,
+                    recipient_name: row.get(4)?,
+                    amount: row.get(5)?,
+                    occurred_at: row.get(6)?,
+                    matched_register_id: row.get(7)?,
+                    raw_text: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?;
+            for r in rows {
+                out.push(r?);
+            }
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, war_id, news_id, recipient_torn_id, recipient_name, amount, occurred_at, matched_register_id, raw_text, created_at
+                 FROM payout_disbursements ORDER BY id DESC"
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(StoredDisbursement {
+                    id: row.get(0)?,
+                    war_id: row.get(1)?,
+                    news_id: row.get(2)?,
+                    recipient_torn_id: row.get(3)?,
+                    recipient_name: row.get(4)?,
+                    amount: row.get(5)?,
+                    occurred_at: row.get(6)?,
+                    matched_register_id: row.get(7)?,
+                    raw_text: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?;
+            for r in rows {
+                out.push(r?);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn upsert_balance(&self, torn_id: i64, name: &str, balance: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
@@ -243,5 +345,12 @@ mod tests {
         let bals = db.list_balances().unwrap();
         assert_eq!(bals.len(), 1);
         assert_eq!(bals[0].balance, 50000000);
+
+        db.save_disbursement("news123", Some(40711), 2532285, Some("MrRazorlove"), 74978810, None, Some(10), "increased balance")
+            .unwrap();
+        let disbs = db.list_disbursements(Some(40711)).unwrap();
+        assert_eq!(disbs.len(), 1);
+        assert_eq!(disbs[0].news_id, "news123");
+        assert_eq!(disbs[0].amount, 74978810);
     }
 }

@@ -2,12 +2,13 @@
 
 use crate::gym::{self, SessionParams};
 use crate::payout::{self, PayoutOptions, PayoutPolicy, PayoutResult, MemberInput};
-use crate::storage::{Database, StoredWar};
+use crate::reconcile::{self, GiveForMatch, ParsedDisbursement, ReconcileSummary, RegisterRowForMatch};
+use crate::storage::{Database, StoredDisbursement, StoredWar};
 use crate::torn::TornClient;
 use crate::valuation::{self, ValuationBreakdown};
 use crate::vault;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Json};
 use axum::routing::{get, post};
@@ -49,6 +50,19 @@ pub struct CsvExportRequest {
     pub faction_id: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ReconcileMatchRequest {
+    pub gives: Vec<GiveForMatch>,
+    pub register: Vec<RegisterRowForMatch>,
+    #[serde(default)]
+    pub tolerance_pct: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DisbursementsQuery {
+    pub war_id: Option<i64>,
+}
+
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(dashboard_handler))
@@ -58,6 +72,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/payout/export-csv", post(payout_csv_handler))
         .route("/api/valuation/compute", post(valuation_compute_handler))
         .route("/api/gym/simulate", post(gym_simulate_handler))
+        .route("/api/reconcile/parse", post(reconcile_parse_handler))
+        .route("/api/reconcile/match", post(reconcile_match_handler))
+        .route("/api/disbursements", get(list_disbursements_handler).post(save_disbursements_handler))
         .route("/api/wars", get(list_wars_handler).post(create_war_handler))
         .route("/api/wars/:id", get(get_war_handler))
         .route("/api/balances", get(list_balances_handler))
@@ -141,6 +158,65 @@ async fn gym_simulate_handler(
     Json(res)
 }
 
+async fn reconcile_parse_handler(
+    Json(news_payload): Json<serde_json::Value>,
+) -> Json<Vec<ParsedDisbursement>> {
+    let disbursements = reconcile::parse_disbursements(&news_payload);
+    Json(disbursements)
+}
+
+async fn reconcile_match_handler(
+    Json(req): Json<ReconcileMatchRequest>,
+) -> Json<ReconcileSummary> {
+    let tol = req.tolerance_pct.unwrap_or(0.005);
+    let summary = reconcile::match_disbursements(&req.gives, &req.register, tol);
+    Json(summary)
+}
+
+async fn list_disbursements_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<DisbursementsQuery>,
+) -> Result<Json<Vec<StoredDisbursement>>, (StatusCode, String)> {
+    state
+        .storage
+        .list_disbursements(query.war_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveDisbursementPayload {
+    pub news_id: String,
+    pub war_id: Option<i64>,
+    pub recipient_torn_id: i64,
+    pub recipient_name: Option<String>,
+    pub amount: i64,
+    pub occurred_at: Option<String>,
+    pub matched_register_id: Option<i64>,
+    pub raw_text: String,
+}
+
+async fn save_disbursements_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SaveDisbursementPayload>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    state
+        .storage
+        .save_disbursement(
+            &payload.news_id,
+            payload.war_id,
+            payload.recipient_torn_id,
+            payload.recipient_name.as_deref(),
+            payload.amount,
+            payload.occurred_at.as_deref(),
+            payload.matched_register_id,
+            &payload.raw_text,
+        )
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "saved": true, "news_id": payload.news_id }))))
+}
+
 async fn list_wars_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<StoredWar>>, (StatusCode, String)> {
@@ -216,87 +292,89 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MobHub — Sovereign Faction Ops</title>
+    <title>MobHub: Sovereign Faction Ops</title>
     <style>
         :root {{
             --bg: #0d1117;
             --surface: #161b22;
             --border: #30363d;
-            --accent: #238636;
-            --text: #f0f6fc;
+            --text: #c9d1d9;
             --text-dim: #8b949e;
-            --gold: #f1e05a;
+            --accent: #238636;
+            --accent-glow: rgba(35, 134, 54, 0.4);
+            --gold: #d29922;
         }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            margin: 0;
-            padding: 0;
             background: var(--bg);
             color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            line-height: 1.5;
+            padding: 2rem;
         }}
         .header {{
-            background: var(--surface);
-            border-bottom: 1px solid var(--border);
-            padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
         }}
-        .header h1 {{
-            margin: 0;
-            font-size: 1.4rem;
-            letter-spacing: 0.5px;
+        h1 {{
+            font-size: 1.5rem;
+            color: #fff;
+            letter-spacing: -0.5px;
         }}
         .badge {{
             padding: 0.25rem 0.6rem;
             border-radius: 9999px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 600;
+            text-transform: uppercase;
         }}
         .badge.active {{
-            background: rgba(35, 134, 54, 0.2);
+            background: var(--accent-glow);
             color: #3fb950;
-            border: 1px solid #238636;
+            border: 1px solid #2ea043;
         }}
         .badge.warn {{
             background: rgba(210, 153, 34, 0.2);
             color: #d29922;
-            border: 1px solid #d29922;
+            border: 1px solid #bb8009;
         }}
         .container {{
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 1rem;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 1.5rem;
         }}
         .card {{
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 1.5rem;
+            border-radius: 6px;
+            padding: 1.25rem;
         }}
-        .card h2 {{
-            margin-top: 0;
-            font-size: 1.15rem;
+        h2 {{
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: #fff;
             border-bottom: 1px solid var(--border);
             padding-bottom: 0.5rem;
         }}
         label {{
             display: block;
-            margin: 0.75rem 0 0.25rem;
+            font-size: 0.8rem;
             color: var(--text-dim);
-            font-size: 0.85rem;
+            margin-top: 0.8rem;
+            margin-bottom: 0.2rem;
         }}
         input, select {{
             width: 100%;
-            padding: 0.5rem;
             background: var(--bg);
             border: 1px solid var(--border);
-            color: var(--text);
+            color: #fff;
+            padding: 0.5rem;
             border-radius: 4px;
-            box-sizing: border-box;
+            font-family: inherit;
         }}
         button {{
             margin-top: 1rem;
