@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "dir_path": "/home/drakestapleton/workspace/mobhub/tests",
+  "dir_name": "tests",
+  "description": "Integration tests for MobHub native suite.",
+  "purpose": {
+    "statement": "End-to-end integration tests verifying payout calculations, valuation, and API endpoints.",
+    "created_by": "AIEN",
+    "lifecycle": "permanent"
+  },
+  "above": {
+    "path": "..",
+    "canonical": "/home/drakestapleton/workspace/mobhub",
+    "name": "mobhub",
+    "role": "MobHub workspace root"
+  },
+  "below": []
+}
