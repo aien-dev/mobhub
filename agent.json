@@ -1,0 +1,23 @@
+{
+  "$schema": "https://aien.org/schemas/agent-v1.json",
+  "name": "mobhub",
+  "version": "0.1.0",
+  "description": "Ultra-high-performance native Rust rewrite of MobHub faction operations engine",
+  "repository": "https://github.com/aien-dev/mobhub",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "architecture": [
+    "x86_64",
+    "aarch64-grace-blackwell"
+  ],
+  "conventions": {
+    "mandatory_branching": true,
+    "zero_em_dashes": true
+  },
+  "runtime": {
+    "rust": "1.85+"
+  },
+  "commands": {
+    "build": "cargo build --release",
+    "test": "cargo test"
+  }
+}
