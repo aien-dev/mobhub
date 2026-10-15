@@ -1,29 +1,29 @@
 {
-  version: 1,
-  dir_path: /home/drakestapleton/workspace/mobhub,
-  dir_name: mobhub,
-  description: Ultra-high-performance native Rust rewrite of MobHub faction operations engine for Torn City.,
-  purpose: {
-    statement: Eliminate Node.js and Python runtime overhead for Torn faction management, war payouts, valuation, and gym training calculations using compiled Rust.,
-    created_by: AIEN,
-    lifecycle: permanent
+  "version": 1,
+  "dir_path": "/home/drakestapleton/workspace/mobhub",
+  "dir_name": "mobhub",
+  "description": "Ultra-high-performance native Rust rewrite of MobHub faction operations engine for Torn City.",
+  "purpose": {
+    "statement": "Eliminate Node.js and Python runtime overhead for Torn faction management, war payouts, valuation, and gym training calculations using compiled Rust.",
+    "created_by": "AIEN",
+    "lifecycle": "permanent"
   },
-  above: {
-    path: ..,
-    canonical: /home/drakestapleton/workspace,
-    name: workspace,
-    role: Production workspaces subtree
+  "above": {
+    "path": "..",
+    "canonical": "/home/drakestapleton/workspace",
+    "name": "workspace",
+    "role": "Production workspaces subtree"
   },
-  below: [
+  "below": [
     {
-      name: src,
-      item_type: dir,
-      role: Native Rust engine, Axum HTTP service, CLI, and business logic
+      "name": "src",
+      "item_type": "dir",
+      "role": "Native Rust engine, Axum HTTP service, CLI, and business logic"
     },
     {
-      name: tests,
-      item_type: dir,
-      role: Integration test suite
+      "name": "tests",
+      "item_type": "dir",
+      "role": "Integration test suite"
     }
   ]
 }
