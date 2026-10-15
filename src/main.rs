@@ -11,12 +11,11 @@ use mobhub::torn::TornClient;
 use mobhub::valuation;
 use mobhub::vault;
 use std::fs;
-use std::process::Command;
 
 #[derive(Parser)]
 #[command(
     name = "mobhub",
-    about = "Ultra-high-performance native Rust and Mojo Torn faction operations suite",
+    about = "Ultra-high-performance native Rust Torn faction operations suite",
     version
 )]
 struct Cli {
@@ -68,7 +67,7 @@ enum Commands {
         cash: f64,
     },
 
-    /// Run gym training simulation via Mojo accelerator or native Rust engine
+    /// Run gym training simulation with the native Rust engine
     Gym {
         #[arg(short, long, default_value = "strength")]
         stat: String,
@@ -230,7 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 min_happy: None,
             };
 
-            let res = gym::run_mojo_optimizer(&params);
+            let res = gym::simulate_session(&params);
             println!("{}", serde_json::to_string_pretty(&res)?);
         }
 
@@ -300,33 +299,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             println!("- Database: {}", db_status);
 
-            // 3. Check Mojo installation
-            let mojo_status = if Command::new("mojo").arg("--version").output().is_ok() {
-                "[OK] Modular Mojo compiler installed and active"
-            } else {
-                "[WARN] Modular Mojo binary not in PATH"
-            };
-            println!("- Mojo Engine: {}", mojo_status);
-
-            // 4. Check gym optimizer kernel
-            let mojo_kernel_path = "mojo/gym_optimizer.mojo";
-            let kernel_status = if std::path::Path::new(mojo_kernel_path).exists() || std::path::Path::new("/home/drakestapleton/workspace/mobhub/mojo/gym_optimizer.mojo").exists() {
-                "[OK] gym_optimizer.mojo kernel verified"
-            } else {
-                "[WARN] gym_optimizer.mojo kernel missing"
-            };
-            println!("- Mojo Kernel: {}", kernel_status);
-
-            // 5. Check compiled Mojo binary
-            let mojo_bin_path = "mojo/gym_optimizer";
-            let bin_status = if std::path::Path::new(mojo_bin_path).exists() || std::path::Path::new("/home/drakestapleton/workspace/mobhub/mojo/gym_optimizer").exists() {
-                "[OK] Compiled Mojo binary present at mojo/gym_optimizer"
-            } else {
-                "[WARN] Compiled Mojo binary not found at mojo/gym_optimizer"
-            };
-            println!("- Mojo Binary: {}", bin_status);
-
-            // 6. Check reconciliation engine
+            // 3. Check reconciliation engine
             let dummy_news = serde_json::json!({ "news": [] });
             let _ = reconcile::parse_disbursements(&dummy_news);
             println!("- Reconcile Engine: [OK] In-memory disbursement parser verified");

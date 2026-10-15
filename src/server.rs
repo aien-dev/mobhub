@@ -154,7 +154,7 @@ async fn valuation_compute_handler(
 async fn gym_simulate_handler(
     Json(req): Json<SessionParams>,
 ) -> Json<gym::SessionResult> {
-    let res = gym::run_mojo_optimizer(&req);
+    let res = gym::simulate_session(&req);
     Json(res)
 }
 
@@ -448,7 +448,7 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
 
         <!-- MobGym Projections -->
         <div class="card">
-            <h2>MobGym Mojo Accelerator</h2>
+            <h2>MobGym Projections</h2>
             <label>Stat Type</label>
             <select id="gymStat">
                 <option value="strength">Strength</option>
