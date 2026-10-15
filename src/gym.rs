@@ -1,8 +1,7 @@
-//! Vladar Training Formula V2.0 in native Rust and Mojo execution engine.
+//! Vladar Training Formula V2.0 in native Rust.
 //! Bit-for-bit validated against Vladar's canonical reference data and community gym guides.
 
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -22,14 +21,18 @@ impl StatName {
             StatName::Defense => "defense",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for StatName {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "strength" | "str" => Some(StatName::Strength),
-            "speed" | "spd" => Some(StatName::Speed),
-            "dexterity" | "dex" => Some(StatName::Dexterity),
-            "defense" | "def" => Some(StatName::Defense),
-            _ => None,
+            "strength" | "str" => Ok(StatName::Strength),
+            "speed" | "spd" => Ok(StatName::Speed),
+            "dexterity" | "dex" => Ok(StatName::Dexterity),
+            "defense" | "def" => Ok(StatName::Defense),
+            _ => Err(format!("unknown stat: {}", s)),
         }
     }
 }
@@ -41,10 +44,22 @@ pub struct StatConstants {
 
 pub fn get_stat_constants(stat: StatName) -> StatConstants {
     match stat {
-        StatName::Strength => StatConstants { a: 1600.0, b: 1700.0 },
-        StatName::Speed => StatConstants { a: 1600.0, b: 2000.0 },
-        StatName::Dexterity => StatConstants { a: 1800.0, b: 1500.0 },
-        StatName::Defense => StatConstants { a: 2100.0, b: -600.0 },
+        StatName::Strength => StatConstants {
+            a: 1600.0,
+            b: 1700.0,
+        },
+        StatName::Speed => StatConstants {
+            a: 1600.0,
+            b: 2000.0,
+        },
+        StatName::Dexterity => StatConstants {
+            a: 1800.0,
+            b: 1500.0,
+        },
+        StatName::Defense => StatConstants {
+            a: 2100.0,
+            b: -600.0,
+        },
     }
 }
 
@@ -167,69 +182,12 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
         end_stat: stat,
         start_happy: p.start_happy,
         end_happy: happy,
-        average_gain_per_train: if trains > 0 { total_gain / (trains as f64) } else { 0.0 },
+        average_gain_per_train: if trains > 0 {
+            total_gain / (trains as f64)
+        } else {
+            0.0
+        },
     }
-}
-
-/// Execute compiled Mojo gym optimizer or fallback to native Rust session engine.
-pub fn run_mojo_optimizer(p: &SessionParams) -> SessionResult {
-    let mult = perk_multiplier(&p.perk_bonuses);
-    let loss = p.happy_loss_per_train.unwrap_or(0.5 * p.energy_per_train);
-    let min_h = p.min_happy.unwrap_or(0.0);
-
-    let candidates = [
-        std::env::var("MOJO_GYM_OPTIMIZER_BIN").ok().map(std::path::PathBuf::from),
-        std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("mojo/gym_optimizer"))),
-        std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("gym_optimizer"))),
-        Some(std::path::PathBuf::from("mojo/gym_optimizer")),
-        Some(std::path::PathBuf::from("./gym_optimizer")),
-        Some(std::path::PathBuf::from("/home/drakestapleton/workspace/mobhub/mojo/gym_optimizer")),
-    ];
-
-    for cand in candidates.into_iter().flatten() {
-        if cand.is_file() {
-            if let Ok(out) = Command::new(&cand)
-                .args([
-                    p.stat.as_str(),
-                    &p.start_stat.to_string(),
-                    &p.start_happy.to_string(),
-                    &p.energy_available.to_string(),
-                    &p.energy_per_train.to_string(),
-                    &p.gym_dots.to_string(),
-                    &mult.to_string(),
-                    &loss.to_string(),
-                    &min_h.to_string(),
-                ])
-                .output()
-            {
-                if out.status.success() {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    if let Some(json_start) = stdout.find('{') {
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdout[json_start..]) {
-                            let trains = parsed.get("trains").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                            let total_gain = parsed.get("total_gain").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let end_stat = parsed.get("end_stat").and_then(|v| v.as_f64()).unwrap_or(p.start_stat);
-                            let end_happy = parsed.get("end_happy").and_then(|v| v.as_f64()).unwrap_or(p.start_happy);
-                            let energy_spent = parsed.get("energy_spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
-
-                            return SessionResult {
-                                trains,
-                                energy_spent,
-                                total_gain,
-                                end_stat,
-                                start_happy: p.start_happy,
-                                end_happy,
-                                average_gain_per_train: if trains > 0 { total_gain / (trains as f64) } else { 0.0 },
-                            };
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Native Rust fallback (guaranteed fast and bit-exact)
-    simulate_session(p)
 }
 
 #[cfg(test)]
@@ -293,25 +251,5 @@ mod tests {
         assert_eq!(res.energy_spent, 100.0);
         assert_eq!(res.end_happy, 5000.0 - 20.0 * 2.5);
         assert!(res.total_gain > 4000.0);
-    }
-
-    #[test]
-    fn test_mojo_optimizer_execution() {
-        let p = SessionParams {
-            stat: StatName::Strength,
-            start_stat: 1_000_000.0,
-            start_happy: 5000.0,
-            energy_available: 50.0,
-            energy_per_train: 5.0,
-            gym_dots: 7.3,
-            perk_bonuses: vec![],
-            happy_loss_per_train: Some(2.5),
-            min_happy: Some(0.0),
-        };
-        let res = run_mojo_optimizer(&p);
-        assert_eq!(res.trains, 10);
-        assert_eq!(res.energy_spent, 50.0);
-        assert!((res.end_happy - 4975.0).abs() < 0.1);
-        assert!(res.total_gain > 2000.0);
     }
 }

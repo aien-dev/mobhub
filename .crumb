@@ -1,34 +1,56 @@
 {
-  version: 1,
-  dir_path: /home/drakestapleton/workspace/mobhub,
-  dir_name: mobhub,
-  description: Ultra-high-performance native Rust and Mojo rewrite of MobHub faction operations engine for Torn City.,
-  purpose: {
-    statement: Eliminate Node.js and Python runtime overhead for Torn faction management, war payouts, valuation, and gym training calculations using compiled Rust and Mojo.,
-    created_by: AIEN,
-    lifecycle: permanent
+  "above": {
+    "canonical": "/home/drakestapleton/workspace",
+    "name": "workspace",
+    "path": "..",
+    "role": "Production workspaces subtree"
   },
-  above: {
-    path: ..,
-    canonical: /home/drakestapleton/workspace,
-    name: workspace,
-    role: Production workspaces subtree
-  },
-  below: [
+  "below": [
     {
-      name: src,
-      item_type: dir,
-      role: Native Rust engine, Axum HTTP service, CLI, and business logic
+      "item_type": "dir",
+      "name": "src",
+      "role": "Native Rust engine, Axum HTTP service, CLI, and business logic"
     },
     {
-      name: mojo,
-      item_type: dir,
-      role: Mojo numerical kernels for gym training trajectory optimization
-    },
-    {
-      name: tests,
-      item_type: dir,
-      role: Integration test suite
+      "item_type": "dir",
+      "name": "tests",
+      "role": "Integration test suite"
     }
-  ]
+  ],
+  "description": "Ultra-high-performance native Rust rewrite of MobHub faction operations engine for Torn City.",
+  "dir_name": "mobhub",
+  "dir_path": "/home/drakestapleton/workspace/mobhub",
+  "extensions": {
+    "generated": {
+      "children": [
+        {
+          "digest": "49bb8b588938b54adea9e4d93c05ccec7e436b7df74098afb7593d07175034b5",
+          "last_commit": "a069a86",
+          "name": "src",
+          "purpose": ""
+        },
+        {
+          "digest": "029537dd0831ac4441989e4af6dee5af41a2be76ceda263e0d19e820f176c9cc",
+          "last_commit": "a069a86",
+          "name": "tests",
+          "purpose": ""
+        }
+      ],
+      "children_root": "sha256:9e5c359748f27d17449ce4ca50af94c992564b7853ed523dca76bf51695d463d",
+      "compiled_at": "2026-10-15T11:23:57Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:96a7ebb3bacc0e37fa9fbf6201830cb9647990dcc9d6dc4dd93db2cebeaa07b1",
+      "evidence_files": 0,
+      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": 23,
+      "generated_at_commit": "dcc7aec7be707fecd6d36ca253a6e8a357af3655",
+      "source_tree": "sha256:7826d2d1a34afc0eef6e8d2dfde7602266e9e01d2102925d41300ab0520c9d7e"
+    }
+  },
+  "purpose": {
+    "created_by": "AIEN",
+    "lifecycle": "permanent",
+    "statement": "Eliminate Node.js and Python runtime overhead for Torn faction management, war payouts, valuation, and gym training calculations using compiled Rust."
+  },
+  "version": 1
 }

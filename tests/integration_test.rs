@@ -105,7 +105,9 @@ async fn test_full_router_integration() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let resp_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(resp_json["faction_fund"], 69900000);
     assert_eq!(resp_json["members"].as_array().unwrap().len(), 2);
@@ -130,9 +132,14 @@ async fn test_full_router_integration() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let val_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(val_json["total_value"], 18028400000i64 + 50000000 + 25000000);
+    assert_eq!(
+        val_json["total_value"],
+        18028400000i64 + 50000000 + 25000000
+    );
 
     // 5. Gym simulate endpoint
     let gym_payload = json!(SessionParams {
@@ -159,7 +166,9 @@ async fn test_full_router_integration() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let gym_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(gym_json["trains"], 10);
 
@@ -184,7 +193,9 @@ async fn test_full_router_integration() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let parsed_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(parsed_json.as_array().unwrap().len(), 1);
     assert_eq!(parsed_json[0]["amount"], 74978810);
@@ -211,7 +222,9 @@ async fn test_full_router_integration() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let match_json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(match_json["matched"], 1);
     assert_eq!(match_json["decisions"][0]["matched_register_id"], 1);

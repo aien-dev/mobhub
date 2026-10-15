@@ -1,4 +1,4 @@
-//! MobHub: Ultra-high-performance native Rust and Mojo faction operations suite for Torn City.
+//! MobHub: Ultra-high-performance native Rust faction operations suite for Torn City.
 
 pub mod gym;
 pub mod payout;

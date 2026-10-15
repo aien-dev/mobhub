@@ -99,7 +99,10 @@ pub fn parse_disbursements(raw_news: &serde_json::Value) -> Vec<ParsedDisburseme
             };
 
             let recipient_name = caps.get(2).map(|m| m.as_str().to_string());
-            let amount_str = caps.get(3).map(|m| m.as_str().replace(',', "")).unwrap_or_default();
+            let amount_str = caps
+                .get(3)
+                .map(|m| m.as_str().replace(',', ""))
+                .unwrap_or_default();
             let amount: i64 = match amount_str.parse() {
                 Ok(a) => a,
                 Err(_) => continue,
@@ -393,7 +396,13 @@ mod tests {
     fn test_pick_payout_give() {
         let gives = vec![(1, 1000000), (2, 2000000)];
         let pick1 = pick_payout_give(1020000, &gives, 0.1);
-        assert_eq!(pick1, PayoutGivePick::One { give_id: 1, amount: 1000000 });
+        assert_eq!(
+            pick1,
+            PayoutGivePick::One {
+                give_id: 1,
+                amount: 1000000
+            }
+        );
 
         let pick_ambig = pick_payout_give(1500000, &gives, 0.5);
         assert_eq!(pick_ambig, PayoutGivePick::Ambiguous);

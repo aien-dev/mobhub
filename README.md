@@ -1,16 +1,16 @@
 # MobHub
 
-Native Rust and Mojo rewrite of the MobHub faction operations engine for Torn City.
+Native Rust rewrite of the MobHub faction operations engine for Torn City.
 
 Replaces the legacy Node.js/Next.js implementation with compiled native binaries and embedded SQLite persistence.
 
 ## Architectural Highlights
 
-- **Pure Native Execution**: Built with native Rust (Axum, Tokio, SQLite) and Modular Mojo. Zero Node.js or Python daemons required.
+- **Pure Native Execution**: Built with native Rust (Axum, Tokio, SQLite). Zero Node.js or Python daemons required.
 - **MobPay Payout Engine**: Deterministic calculation engine supporting flat-rate respect-based and pool-share hit-based models. `test_ganja_warriors_ground_truth` in `src/payout.rs` checks it against per-member payouts from the GanjaWarriors war (cache 349,499,999), within 2,000 per member and 50 on the total. Rounding drift is reconciled to the pool target by default for pool-share and on request (`reconcile_drift`) for flat-rate.
 - **Disbursement & Money-Log Reconciliation**: Parses Torn depositFunds money-log news entries (with automatic OC-cut exclusion) and matches them to unpaid payout register rows (exact amount first, then within a tolerance), reporting a match decision for each entry.
 - **MobWorth Valuation**: Faction net worth as respect x rate + armory value + faction cash. Armory value and cash are supplied by the caller; `src/valuation.rs` also has a parser for spendable cash (vault total minus member deposits) that nothing calls yet.
-- **MobGym Mojo Kernel**: Vladar Training Formula V2.0 for single-train and multi-train sessions with happy decay, in `mojo/gym_optimizer.mojo` and in native Rust (`src/gym.rs`). `mobhub gym` and `/api/gym/simulate` run a compiled Mojo binary if they find one (`MOJO_GYM_OPTIMIZER_BIN`, or `gym_optimizer` / `mojo/gym_optimizer` next to the executable or in the working directory) and otherwise use the Rust engine. `cargo build` does not compile the Mojo kernel.
+- **MobGym Engine**: Vladar Training Formula V2.0 for single-train and multi-train sessions with happy decay, in native Rust (`src/gym.rs`). `mobhub gym` and `/api/gym/simulate` both run this engine.
 - **Hardware TPM Key Vault**: The Torn API key is resolved in memory by running `atlas-vault get TORN_API_KEY` (the vault tool, TPM-bound on the DGX Spark), with the `TORN_API_KEY` environment variable as fallback. MobHub writes no credential files, and log output redacts the key. The Torn API client in `src/torn.rs` is not called by any command or route yet; today the key only drives the vault status shown by `test-vault`, `doctor`, `/status` and the dashboard.
 - **Embedded Web Dashboard**: Self-contained web UI served directly from Axum with zero external CDN or npm package dependencies.
 
@@ -18,7 +18,6 @@ Replaces the legacy Node.js/Next.js implementation with compiled native binaries
 
 ### Prerequisites
 - Rust toolchain (1.80+)
-- Modular Mojo (optional, only to build the gym kernel; without it the Rust engine is used)
 - A C compiler (SQLite is built in through the `bundled` feature of rusqlite, so no system SQLite is needed)
 
 ### Compilation
@@ -76,7 +75,7 @@ Compiled binary will be available at `target/release/mobhub`.
 | `POST` | `/api/payout/compute` | Run deterministic war payout calculation |
 | `POST` | `/api/payout/export-csv` | Export payout register as CSV |
 | `POST` | `/api/valuation/compute` | Calculate faction valuation breakdown |
-| `POST` | `/api/gym/simulate` | Simulate gym session via Mojo/Rust engine |
+| `POST` | `/api/gym/simulate` | Simulate gym session with the Rust engine |
 | `POST` | `/api/reconcile/parse` | Parse raw Torn news to disbursements |
 | `POST` | `/api/reconcile/match` | Match disbursements to payout register rows |
 | `GET` | `/api/disbursements` | List stored disbursements |

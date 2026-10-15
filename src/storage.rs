@@ -200,9 +200,8 @@ impl Database {
 
     pub fn get_payout_register(&self, war_id: i64) -> Result<Option<(String, String)>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT policy_json, result_json FROM payout_registers WHERE war_id = ?1",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT policy_json, result_json FROM payout_registers WHERE war_id = ?1")?;
         let mut rows = stmt.query(params![war_id])?;
         if let Some(row) = rows.next()? {
             Ok(Some((row.get(0)?, row.get(1)?)))
@@ -211,6 +210,7 @@ impl Database {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn save_disbursement(
         &self,
         news_id: &str,
@@ -346,8 +346,17 @@ mod tests {
         assert_eq!(bals.len(), 1);
         assert_eq!(bals[0].balance, 50000000);
 
-        db.save_disbursement("news123", Some(40711), 2532285, Some("MrRazorlove"), 74978810, None, Some(10), "increased balance")
-            .unwrap();
+        db.save_disbursement(
+            "news123",
+            Some(40711),
+            2532285,
+            Some("MrRazorlove"),
+            74978810,
+            None,
+            Some(10),
+            "increased balance",
+        )
+        .unwrap();
         let disbs = db.list_disbursements(Some(40711)).unwrap();
         assert_eq!(disbs.len(), 1);
         assert_eq!(disbs[0].news_id, "news123");

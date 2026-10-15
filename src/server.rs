@@ -1,8 +1,10 @@
 //! Ultra-low-latency Axum HTTP service and embedded dashboard UI.
 
 use crate::gym::{self, SessionParams};
-use crate::payout::{self, PayoutOptions, PayoutPolicy, PayoutResult, MemberInput};
-use crate::reconcile::{self, GiveForMatch, ParsedDisbursement, ReconcileSummary, RegisterRowForMatch};
+use crate::payout::{self, MemberInput, PayoutOptions, PayoutPolicy, PayoutResult};
+use crate::reconcile::{
+    self, GiveForMatch, ParsedDisbursement, ReconcileSummary, RegisterRowForMatch,
+};
 use crate::storage::{Database, StoredDisbursement, StoredWar};
 use crate::torn::TornClient;
 use crate::valuation::{self, ValuationBreakdown};
@@ -74,7 +76,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/gym/simulate", post(gym_simulate_handler))
         .route("/api/reconcile/parse", post(reconcile_parse_handler))
         .route("/api/reconcile/match", post(reconcile_match_handler))
-        .route("/api/disbursements", get(list_disbursements_handler).post(save_disbursements_handler))
+        .route(
+            "/api/disbursements",
+            get(list_disbursements_handler).post(save_disbursements_handler),
+        )
         .route("/api/wars", get(list_wars_handler).post(create_war_handler))
         .route("/api/wars/:id", get(get_war_handler))
         .route("/api/balances", get(list_balances_handler))
@@ -139,9 +144,7 @@ async fn payout_csv_handler(
     )
 }
 
-async fn valuation_compute_handler(
-    Json(req): Json<ValuationRequest>,
-) -> Json<ValuationBreakdown> {
+async fn valuation_compute_handler(Json(req): Json<ValuationRequest>) -> Json<ValuationBreakdown> {
     let res = valuation::compute_valuation(
         req.respect,
         req.respect_rate,
@@ -151,10 +154,8 @@ async fn valuation_compute_handler(
     Json(res)
 }
 
-async fn gym_simulate_handler(
-    Json(req): Json<SessionParams>,
-) -> Json<gym::SessionResult> {
-    let res = gym::run_mojo_optimizer(&req);
+async fn gym_simulate_handler(Json(req): Json<SessionParams>) -> Json<gym::SessionResult> {
+    let res = gym::simulate_session(&req);
     Json(res)
 }
 
@@ -165,9 +166,7 @@ async fn reconcile_parse_handler(
     Json(disbursements)
 }
 
-async fn reconcile_match_handler(
-    Json(req): Json<ReconcileMatchRequest>,
-) -> Json<ReconcileSummary> {
+async fn reconcile_match_handler(Json(req): Json<ReconcileMatchRequest>) -> Json<ReconcileSummary> {
     let tol = req.tolerance_pct.unwrap_or(0.005);
     let summary = reconcile::match_disbursements(&req.gives, &req.register, tol);
     Json(summary)
@@ -214,7 +213,10 @@ async fn save_disbursements_handler(
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok((StatusCode::CREATED, Json(json!({ "saved": true, "news_id": payload.news_id }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "saved": true, "news_id": payload.news_id })),
+    ))
 }
 
 async fn list_wars_handler(
@@ -287,7 +289,8 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
         r#"<span class="badge warn">Vault Unbound</span>"#
     };
 
-    let html = format!(r#"<!DOCTYPE html>
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -448,7 +451,7 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
 
         <!-- MobGym Projections -->
         <div class="card">
-            <h2>MobGym Mojo Accelerator</h2>
+            <h2>MobGym Projections</h2>
             <label>Stat Type</label>
             <select id="gymStat">
                 <option value="strength">Strength</option>
@@ -559,7 +562,10 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
         }}
     </script>
 </body>
-</html>"#, status_badge = status_badge, faction_id = state.faction_id);
+</html>"#,
+        status_badge = status_badge,
+        faction_id = state.faction_id
+    );
 
     Html(html)
 }
