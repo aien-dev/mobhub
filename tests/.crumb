@@ -1,18 +1,32 @@
 {
-  "version": 1,
-  "dir_path": "/home/drakestapleton/workspace/mobhub/tests",
-  "dir_name": "tests",
-  "description": "Integration tests for MobHub native suite.",
-  "purpose": {
-    "statement": "End-to-end integration tests verifying payout calculations, valuation, and API endpoints.",
-    "created_by": "AIEN",
-    "lifecycle": "permanent"
-  },
   "above": {
-    "path": "..",
     "canonical": "/home/drakestapleton/workspace/mobhub",
     "name": "mobhub",
+    "path": "..",
     "role": "MobHub workspace root"
   },
-  "below": []
+  "below": [],
+  "description": "Integration tests for MobHub native suite.",
+  "dir_name": "tests",
+  "dir_path": "/home/drakestapleton/workspace/mobhub/tests",
+  "extensions": {
+    "generated": {
+      "children": [],
+      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compiled_at": "2026-10-15T11:23:57Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:029537dd0831ac4441989e4af6dee5af41a2be76ceda263e0d19e820f176c9cc",
+      "evidence_files": 0,
+      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": 1,
+      "generated_at_commit": "dcc7aec7be707fecd6d36ca253a6e8a357af3655",
+      "source_tree": "sha256:bea782919302e281e98b5f19a0da4e1c52d6329de0c0cf0a2e8eeadc822eb257"
+    }
+  },
+  "purpose": {
+    "created_by": "AIEN",
+    "lifecycle": "permanent",
+    "statement": "End-to-end integration tests verifying payout calculations, valuation, and API endpoints."
+  },
+  "version": 1
 }

@@ -1,18 +1,32 @@
 {
-  "version": 1,
-  "dir_path": "/home/drakestapleton/workspace/mobhub/src",
-  "dir_name": "src",
-  "description": "Native Rust implementation of MobHub faction operations suite.",
-  "purpose": {
-    "statement": "Core Rust business logic, Axum HTTP web server, SQLite persistence, Torn v2 API client, and CLI commands.",
-    "created_by": "AIEN",
-    "lifecycle": "permanent"
-  },
   "above": {
-    "path": "..",
     "canonical": "/home/drakestapleton/workspace/mobhub",
     "name": "mobhub",
+    "path": "..",
     "role": "MobHub workspace root"
   },
-  "below": []
+  "below": [],
+  "description": "Native Rust implementation of MobHub faction operations suite.",
+  "dir_name": "src",
+  "dir_path": "/home/drakestapleton/workspace/mobhub/src",
+  "extensions": {
+    "generated": {
+      "children": [],
+      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compiled_at": "2026-10-15T11:23:57Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:49bb8b588938b54adea9e4d93c05ccec7e436b7df74098afb7593d07175034b5",
+      "evidence_files": 0,
+      "evidence_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": 10,
+      "generated_at_commit": "dcc7aec7be707fecd6d36ca253a6e8a357af3655",
+      "source_tree": "sha256:45679ad963602c9eb0272c329583a83c77fd9a2af0d7197fbfa6baa2e4ccdfdf"
+    }
+  },
+  "purpose": {
+    "created_by": "AIEN",
+    "lifecycle": "permanent",
+    "statement": "Core Rust business logic, Axum HTTP web server, SQLite persistence, Torn v2 API client, and CLI commands."
+  },
+  "version": 1
 }
