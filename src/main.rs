@@ -186,11 +186,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ]
             };
 
-            let result = payout::compute_payout(cache, &policy, &members, &PayoutOptions::default());
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&result)?
-            );
+            let result =
+                payout::compute_payout(cache, &policy, &members, &PayoutOptions::default());
+            println!("{}", serde_json::to_string_pretty(&result)?);
 
             if let Some(csv_path) = out_csv {
                 let csv = payout::export_payout_csv(&result, 50645);
@@ -216,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             energy,
             dots,
         } => {
-            let s_name = StatName::from_str(&stat).unwrap_or(StatName::Strength);
+            let s_name: StatName = stat.parse().unwrap_or(StatName::Strength);
             let params = SessionParams {
                 stat: s_name,
                 start_stat,
@@ -241,7 +239,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let news_content = fs::read_to_string(&news_file)?;
             let raw_news: serde_json::Value = serde_json::from_str(&news_content)?;
             let disbursements = reconcile::parse_disbursements(&raw_news);
-            println!("Parsed {} disbursements from {}", disbursements.len(), news_file);
+            println!(
+                "Parsed {} disbursements from {}",
+                disbursements.len(),
+                news_file
+            );
 
             if let Some(reg_path) = register_file {
                 let reg_content = fs::read_to_string(&reg_path)?;

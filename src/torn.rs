@@ -55,6 +55,12 @@ pub struct TornClient {
     mock_responses: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
+impl Default for TornClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TornClient {
     pub fn new() -> Self {
         let mut headers = HeaderMap::new();
@@ -100,7 +106,8 @@ impl TornClient {
             }
 
             let oldest = timestamps[0];
-            let wait_time = RATE_WINDOW.saturating_sub(now.duration_since(oldest)) + Duration::from_millis(10);
+            let wait_time =
+                RATE_WINDOW.saturating_sub(now.duration_since(oldest)) + Duration::from_millis(10);
             drop(timestamps);
             tokio::time::sleep(wait_time).await;
         }
@@ -135,7 +142,11 @@ impl TornClient {
 
         while attempt < max_attempts {
             attempt += 1;
-            let _permit = self.semaphore.acquire().await.map_err(|e| TornError::Network(e.to_string()))?;
+            let _permit = self
+                .semaphore
+                .acquire()
+                .await
+                .map_err(|e| TornError::Network(e.to_string()))?;
             self.wait_for_rate_limit_slot().await;
 
             let response = match self.http.get(&full_url).send().await {
@@ -155,12 +166,19 @@ impl TornClient {
                 continue;
             }
 
-            let text = response.text().await.map_err(|e| TornError::Network(vault::redact_secrets(&e.to_string())))?;
-            let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| TornError::Serialization(e.to_string()))?;
+            let text = response
+                .text()
+                .await
+                .map_err(|e| TornError::Network(vault::redact_secrets(&e.to_string())))?;
+            let json: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| TornError::Serialization(e.to_string()))?;
 
             if let Some(err_obj) = json.get("error").and_then(|e| e.as_object()) {
                 let code = err_obj.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-                let msg = err_obj.get("error").and_then(|m| m.as_str()).unwrap_or("Unknown Torn API error");
+                let msg = err_obj
+                    .get("error")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("Unknown Torn API error");
                 if (code == 5 || code == 17) && attempt < max_attempts {
                     tokio::time::sleep(Duration::from_millis(1500 * attempt as u64)).await;
                     continue;
@@ -172,7 +190,10 @@ impl TornClient {
             }
 
             if let Some(err_name) = json.get("error_name").and_then(|e| e.as_str()) {
-                let code = json.get("error_code").and_then(|c| c.as_i64()).unwrap_or(status.as_u16() as i64);
+                let code = json
+                    .get("error_code")
+                    .and_then(|c| c.as_i64())
+                    .unwrap_or(status.as_u16() as i64);
                 return Err(TornError::Api {
                     code,
                     message: err_name.to_string(),
@@ -188,16 +209,21 @@ impl TornClient {
 
             if use_cache {
                 let mut cache = self.cache.lock().await;
-                cache.insert(cache_key.clone(), CacheEntry {
-                    stored_at: Instant::now(),
-                    data: json.clone(),
-                });
+                cache.insert(
+                    cache_key.clone(),
+                    CacheEntry {
+                        stored_at: Instant::now(),
+                        data: json.clone(),
+                    },
+                );
             }
 
             return Ok(json);
         }
 
-        Err(last_error.unwrap_or(TornError::Network("Max retry attempts exceeded".to_string())))
+        Err(last_error.unwrap_or(TornError::Network(
+            "Max retry attempts exceeded".to_string(),
+        )))
     }
 
     pub async fn get_ranked_wars(&self) -> Result<serde_json::Value, TornError> {
@@ -205,7 +231,8 @@ impl TornClient {
     }
 
     pub async fn get_ranked_war_report(&self, war_id: i64) -> Result<serde_json::Value, TornError> {
-        self.get(&format!("/faction/{}/rankedwarreport", war_id), true).await
+        self.get(&format!("/faction/{}/rankedwarreport", war_id), true)
+            .await
     }
 
     pub async fn get_faction_members(&self) -> Result<serde_json::Value, TornError> {
@@ -261,7 +288,10 @@ mod tests {
             )
             .await;
 
-        let news = client.get_faction_news("depositFunds", None, None, None).await.unwrap();
+        let news = client
+            .get_faction_news("depositFunds", None, None, None)
+            .await
+            .unwrap();
         assert_eq!(news["news"][0]["id"], "1");
     }
 }

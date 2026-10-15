@@ -21,14 +21,18 @@ impl StatName {
             StatName::Defense => "defense",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for StatName {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "strength" | "str" => Some(StatName::Strength),
-            "speed" | "spd" => Some(StatName::Speed),
-            "dexterity" | "dex" => Some(StatName::Dexterity),
-            "defense" | "def" => Some(StatName::Defense),
-            _ => None,
+            "strength" | "str" => Ok(StatName::Strength),
+            "speed" | "spd" => Ok(StatName::Speed),
+            "dexterity" | "dex" => Ok(StatName::Dexterity),
+            "defense" | "def" => Ok(StatName::Defense),
+            _ => Err(format!("unknown stat: {}", s)),
         }
     }
 }
@@ -40,10 +44,22 @@ pub struct StatConstants {
 
 pub fn get_stat_constants(stat: StatName) -> StatConstants {
     match stat {
-        StatName::Strength => StatConstants { a: 1600.0, b: 1700.0 },
-        StatName::Speed => StatConstants { a: 1600.0, b: 2000.0 },
-        StatName::Dexterity => StatConstants { a: 1800.0, b: 1500.0 },
-        StatName::Defense => StatConstants { a: 2100.0, b: -600.0 },
+        StatName::Strength => StatConstants {
+            a: 1600.0,
+            b: 1700.0,
+        },
+        StatName::Speed => StatConstants {
+            a: 1600.0,
+            b: 2000.0,
+        },
+        StatName::Dexterity => StatConstants {
+            a: 1800.0,
+            b: 1500.0,
+        },
+        StatName::Defense => StatConstants {
+            a: 2100.0,
+            b: -600.0,
+        },
     }
 }
 
@@ -166,7 +182,11 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
         end_stat: stat,
         start_happy: p.start_happy,
         end_happy: happy,
-        average_gain_per_train: if trains > 0 { total_gain / (trains as f64) } else { 0.0 },
+        average_gain_per_train: if trains > 0 {
+            total_gain / (trains as f64)
+        } else {
+            0.0
+        },
     }
 }
 

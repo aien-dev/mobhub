@@ -131,23 +131,27 @@ pub fn compute_payout(
     };
 
     if split_leadership_pct > 0.0 && recipient_id.is_none() {
-        warnings.push("Leadership split > 0 but no leadership recipient is configured.".to_string());
+        warnings
+            .push("Leadership split > 0 but no leadership recipient is configured.".to_string());
     }
 
-    let leader_shares_pool = recipient_id.is_some() && policy.leadership_also_gets_member_pay.unwrap_or(false);
-    let is_bought_out = |tid: i64| -> bool {
-        recipient_id == Some(tid) && !leader_shares_pool
-    };
+    let leader_shares_pool =
+        recipient_id.is_some() && policy.leadership_also_gets_member_pay.unwrap_or(false);
+    let is_bought_out = |tid: i64| -> bool { recipient_id == Some(tid) && !leader_shares_pool };
 
     let dist_members: Vec<&MemberInput> = members_input
         .iter()
         .filter(|m| !is_bought_out(m.torn_id))
         .collect();
 
-    let leadership_member = recipient_id.and_then(|rid| members_input.iter().find(|m| m.torn_id == rid));
+    let leadership_member =
+        recipient_id.and_then(|rid| members_input.iter().find(|m| m.torn_id == rid));
 
     let mut out: Vec<MemberPayout> = Vec::new();
-    let total_payable_hits: f64 = dist_members.iter().map(|m| payable_hits_of(m, policy)).sum();
+    let total_payable_hits: f64 = dist_members
+        .iter()
+        .map(|m| payable_hits_of(m, policy))
+        .sum();
     let mut total_flat_respect: f64 = 0.0;
     let mut bonus_total: i64 = 0;
     let mut derived_rate_per_respect: Option<f64> = None;
@@ -168,7 +172,10 @@ pub fn compute_payout(
         } else {
             let respect_pool = members_pool - (bonus_total as f64);
             if respect_pool < 0.0 {
-                warnings.push("Outside/assist bonuses exceed member pool; per-respect rate set to 0.".to_string());
+                warnings.push(
+                    "Outside/assist bonuses exceed member pool; per-respect rate set to 0."
+                        .to_string(),
+                );
                 0.0
             } else if total_flat_respect > 0.0 {
                 respect_pool / total_flat_respect
@@ -228,8 +235,13 @@ pub fn compute_payout(
     }
 
     // Zero-drift remainder reconciliation when enabled or default in PoolShare
-    let should_reconcile = options.reconcile_drift.unwrap_or(policy.model == PayoutModel::PoolShare);
-    if should_reconcile && !out.is_empty() && (total_payable_hits > 0.0 || policy.model == PayoutModel::FlatRate) {
+    let should_reconcile = options
+        .reconcile_drift
+        .unwrap_or(policy.model == PayoutModel::PoolShare);
+    if should_reconcile
+        && !out.is_empty()
+        && (total_payable_hits > 0.0 || policy.model == PayoutModel::FlatRate)
+    {
         let pool_target = round_to_i64(members_pool);
         let current_pool_sum: i64 = out.iter().map(|m| m.base_amount).sum();
         let drift = pool_target - current_pool_sum;
@@ -237,7 +249,9 @@ pub fn compute_payout(
         if drift != 0 {
             let mut indices: Vec<usize> = (0..out.len()).collect();
             indices.sort_by(|&a, &b| {
-                out[b].payable_hits.partial_cmp(&out[a].payable_hits)
+                out[b]
+                    .payable_hits
+                    .partial_cmp(&out[a].payable_hits)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| out[a].torn_id.cmp(&out[b].torn_id))
             });
@@ -413,29 +427,213 @@ mod tests {
     }
 
     const GANJA: &[GanjaMember] = &[
-        GanjaMember { torn_id: 2532285, name: "MrRazorlove", war_hits: 55, assists: 0, outside_hits: 1, flat_respect: 413.12, expected_payout: 74978973 },
-        GanjaMember { torn_id: 4187899, name: "BabyBubbles", war_hits: 26, assists: 0, outside_hits: 0, flat_respect: 180.5, expected_payout: 32541282 },
-        GanjaMember { torn_id: 3455459, name: "MrLoki", war_hits: 33, assists: 0, outside_hits: 0, flat_respect: 168.01, expected_payout: 30289534 },
-        GanjaMember { torn_id: 4111834, name: "OrangeGutans", war_hits: 1, assists: 0, outside_hits: 18, flat_respect: 85.05, expected_payout: 24333164 },
-        GanjaMember { torn_id: 3015468, name: "Booty_Warrior1", war_hits: 21, assists: 0, outside_hits: 5, flat_respect: 111.98, expected_payout: 22688215 },
-        GanjaMember { torn_id: 1713646, name: "Dragonevotv", war_hits: 21, assists: 0, outside_hits: 2, flat_respect: 85.07, expected_payout: 16336769 },
-        GanjaMember { torn_id: 4052511, name: "YaGirlKiKi04", war_hits: 18, assists: 0, outside_hits: 0, flat_respect: 85.65, expected_payout: 15441334 },
-        GanjaMember { torn_id: 4115047, name: "Roffo", war_hits: 12, assists: 3, outside_hits: 1, flat_respect: 75.02, expected_payout: 14774914 },
-        GanjaMember { torn_id: 4027928, name: "TheLastPrimate", war_hits: 10, assists: 0, outside_hits: 0, flat_respect: 77.0, expected_payout: 13881877 },
-        GanjaMember { torn_id: 3955191, name: "Sibbett", war_hits: 11, assists: 0, outside_hits: 0, flat_respect: 54.49, expected_payout: 9823681 },
-        GanjaMember { torn_id: 3556466, name: "babyYoda10", war_hits: 10, assists: 0, outside_hits: 0, flat_respect: 44.26, expected_payout: 7979375 },
-        GanjaMember { torn_id: 4113799, name: "LTsuqmadiq", war_hits: 6, assists: 1, outside_hits: 0, flat_respect: 40.41, expected_payout: 7535281 },
-        GanjaMember { torn_id: 4154259, name: "killibeats", war_hits: 5, assists: 0, outside_hits: 2, flat_respect: 35.34, expected_payout: 7371241 },
-        GanjaMember { torn_id: 3955301, name: "helpmelive", war_hits: 2, assists: 0, outside_hits: 0, flat_respect: 9.01, expected_payout: 1624360 },
-        GanjaMember { torn_id: 3706442, name: "MAJI_THE_VAGI", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 3456295, name: "ArthurShellby", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 3612877, name: "MrK0RG", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 4129627, name: "magnat_88", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 2811446, name: "Morphis0912", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 4117849, name: "Russ012", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 2990570, name: "BougarniN", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 3865277, name: "Vito", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
-        GanjaMember { torn_id: 3997892, name: "VANSH01", war_hits: 0, assists: 0, outside_hits: 0, flat_respect: 0.0, expected_payout: 0 },
+        GanjaMember {
+            torn_id: 2532285,
+            name: "MrRazorlove",
+            war_hits: 55,
+            assists: 0,
+            outside_hits: 1,
+            flat_respect: 413.12,
+            expected_payout: 74978973,
+        },
+        GanjaMember {
+            torn_id: 4187899,
+            name: "BabyBubbles",
+            war_hits: 26,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 180.5,
+            expected_payout: 32541282,
+        },
+        GanjaMember {
+            torn_id: 3455459,
+            name: "MrLoki",
+            war_hits: 33,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 168.01,
+            expected_payout: 30289534,
+        },
+        GanjaMember {
+            torn_id: 4111834,
+            name: "OrangeGutans",
+            war_hits: 1,
+            assists: 0,
+            outside_hits: 18,
+            flat_respect: 85.05,
+            expected_payout: 24333164,
+        },
+        GanjaMember {
+            torn_id: 3015468,
+            name: "Booty_Warrior1",
+            war_hits: 21,
+            assists: 0,
+            outside_hits: 5,
+            flat_respect: 111.98,
+            expected_payout: 22688215,
+        },
+        GanjaMember {
+            torn_id: 1713646,
+            name: "Dragonevotv",
+            war_hits: 21,
+            assists: 0,
+            outside_hits: 2,
+            flat_respect: 85.07,
+            expected_payout: 16336769,
+        },
+        GanjaMember {
+            torn_id: 4052511,
+            name: "YaGirlKiKi04",
+            war_hits: 18,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 85.65,
+            expected_payout: 15441334,
+        },
+        GanjaMember {
+            torn_id: 4115047,
+            name: "Roffo",
+            war_hits: 12,
+            assists: 3,
+            outside_hits: 1,
+            flat_respect: 75.02,
+            expected_payout: 14774914,
+        },
+        GanjaMember {
+            torn_id: 4027928,
+            name: "TheLastPrimate",
+            war_hits: 10,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 77.0,
+            expected_payout: 13881877,
+        },
+        GanjaMember {
+            torn_id: 3955191,
+            name: "Sibbett",
+            war_hits: 11,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 54.49,
+            expected_payout: 9823681,
+        },
+        GanjaMember {
+            torn_id: 3556466,
+            name: "babyYoda10",
+            war_hits: 10,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 44.26,
+            expected_payout: 7979375,
+        },
+        GanjaMember {
+            torn_id: 4113799,
+            name: "LTsuqmadiq",
+            war_hits: 6,
+            assists: 1,
+            outside_hits: 0,
+            flat_respect: 40.41,
+            expected_payout: 7535281,
+        },
+        GanjaMember {
+            torn_id: 4154259,
+            name: "killibeats",
+            war_hits: 5,
+            assists: 0,
+            outside_hits: 2,
+            flat_respect: 35.34,
+            expected_payout: 7371241,
+        },
+        GanjaMember {
+            torn_id: 3955301,
+            name: "helpmelive",
+            war_hits: 2,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 9.01,
+            expected_payout: 1624360,
+        },
+        GanjaMember {
+            torn_id: 3706442,
+            name: "MAJI_THE_VAGI",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 3456295,
+            name: "ArthurShellby",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 3612877,
+            name: "MrK0RG",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 4129627,
+            name: "magnat_88",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 2811446,
+            name: "Morphis0912",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 4117849,
+            name: "Russ012",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 2990570,
+            name: "BougarniN",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 3865277,
+            name: "Vito",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
+        GanjaMember {
+            torn_id: 3997892,
+            name: "VANSH01",
+            war_hits: 0,
+            assists: 0,
+            outside_hits: 0,
+            flat_respect: 0.0,
+            expected_payout: 0,
+        },
     ];
 
     fn default_flat_policy() -> PayoutPolicy {
@@ -471,10 +669,19 @@ mod tests {
             })
             .collect();
 
-        let r = compute_payout(349499999, &default_flat_policy(), &members, &PayoutOptions::default());
+        let r = compute_payout(
+            349499999,
+            &default_flat_policy(),
+            &members,
+            &PayoutOptions::default(),
+        );
 
         let rate = r.derived_rate_per_respect.unwrap();
-        assert!(rate > 180283.0 && rate < 180285.0, "derived rate was {}", rate);
+        assert!(
+            rate > 180283.0 && rate < 180285.0,
+            "derived rate was {}",
+            rate
+        );
         assert_eq!(r.faction_fund, 69900000);
         assert!((r.member_payout_total - r.members_pool).abs() < 50);
 
@@ -500,14 +707,36 @@ mod tests {
         policy.model = PayoutModel::PoolShare;
 
         let members = vec![
-            MemberInput { torn_id: 1, name: Some("A".to_string()), flat_respect: 0.0, war_hits: 3, assists: 0, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 2, name: Some("B".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput {
+                torn_id: 1,
+                name: Some("A".to_string()),
+                flat_respect: 0.0,
+                war_hits: 3,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 2,
+                name: Some("B".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
         ];
 
         let r = compute_payout(1250000, &policy, &members, &PayoutOptions::default());
         assert_eq!(r.members_pool, 1000000);
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 1).unwrap().amount, 750000);
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 2).unwrap().amount, 250000);
+        assert_eq!(
+            r.members.iter().find(|m| m.torn_id == 1).unwrap().amount,
+            750000
+        );
+        assert_eq!(
+            r.members.iter().find(|m| m.torn_id == 2).unwrap().amount,
+            250000
+        );
         assert_eq!(r.member_payout_total, 1000000);
         assert_eq!(r.unallocated, 0);
     }
@@ -521,9 +750,33 @@ mod tests {
         // Unreconciled integer rounding gives 27 + 27 + 27 = 81 (drift -1).
         // With reconciliation, sum is exactly 80 and unallocated is 0.
         let members = vec![
-            MemberInput { torn_id: 1, name: Some("A".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 2, name: Some("B".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 3, name: Some("C".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput {
+                torn_id: 1,
+                name: Some("A".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 2,
+                name: Some("B".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 3,
+                name: Some("C".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
         ];
 
         let r = compute_payout(100, &policy, &members, &PayoutOptions::default());
@@ -544,9 +797,33 @@ mod tests {
         policy.leadership_also_gets_member_pay = Some(true);
 
         let members = vec![
-            MemberInput { torn_id: 99, name: Some("Leader".to_string()), flat_respect: 0.0, war_hits: 50, assists: 0, outside_hits: 0, is_leadership: Some(true) },
-            MemberInput { torn_id: 1, name: Some("A".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 2, name: Some("B".to_string()), flat_respect: 0.0, war_hits: 1, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput {
+                torn_id: 99,
+                name: Some("Leader".to_string()),
+                flat_respect: 0.0,
+                war_hits: 50,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: Some(true),
+            },
+            MemberInput {
+                torn_id: 1,
+                name: Some("A".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 2,
+                name: Some("B".to_string()),
+                flat_respect: 0.0,
+                war_hits: 1,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
         ];
 
         let r = compute_payout(1000000, &policy, &members, &PayoutOptions::default());
@@ -564,19 +841,82 @@ mod tests {
         policy.model = PayoutModel::PoolShare;
 
         let members = vec![
-            MemberInput { torn_id: 1, name: Some("Fighter".to_string()), flat_respect: 0.0, war_hits: 3, assists: 0, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 2, name: Some("AssistOnly".to_string()), flat_respect: 0.0, war_hits: 0, assists: 4, outside_hits: 0, is_leadership: None },
-            MemberInput { torn_id: 3, name: Some("OutsideOnly".to_string()), flat_respect: 0.0, war_hits: 0, assists: 0, outside_hits: 6, is_leadership: None },
-            MemberInput { torn_id: 4, name: Some("NoShow".to_string()), flat_respect: 0.0, war_hits: 0, assists: 0, outside_hits: 0, is_leadership: None },
+            MemberInput {
+                torn_id: 1,
+                name: Some("Fighter".to_string()),
+                flat_respect: 0.0,
+                war_hits: 3,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 2,
+                name: Some("AssistOnly".to_string()),
+                flat_respect: 0.0,
+                war_hits: 0,
+                assists: 4,
+                outside_hits: 0,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 3,
+                name: Some("OutsideOnly".to_string()),
+                flat_respect: 0.0,
+                war_hits: 0,
+                assists: 0,
+                outside_hits: 6,
+                is_leadership: None,
+            },
+            MemberInput {
+                torn_id: 4,
+                name: Some("NoShow".to_string()),
+                flat_respect: 0.0,
+                war_hits: 0,
+                assists: 0,
+                outside_hits: 0,
+                is_leadership: None,
+            },
         ];
 
-        let opts = PayoutOptions { flat_bonus_per_member: Some(5000), reconcile_drift: None };
+        let opts = PayoutOptions {
+            flat_bonus_per_member: Some(5000),
+            reconcile_drift: None,
+        };
         let r = compute_payout(1000000, &policy, &members, &opts);
 
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 1).unwrap().flat_bonus, 5000);
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 2).unwrap().flat_bonus, 0);
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 3).unwrap().flat_bonus, 0);
-        assert_eq!(r.members.iter().find(|m| m.torn_id == 4).unwrap().flat_bonus, 0);
+        assert_eq!(
+            r.members
+                .iter()
+                .find(|m| m.torn_id == 1)
+                .unwrap()
+                .flat_bonus,
+            5000
+        );
+        assert_eq!(
+            r.members
+                .iter()
+                .find(|m| m.torn_id == 2)
+                .unwrap()
+                .flat_bonus,
+            0
+        );
+        assert_eq!(
+            r.members
+                .iter()
+                .find(|m| m.torn_id == 3)
+                .unwrap()
+                .flat_bonus,
+            0
+        );
+        assert_eq!(
+            r.members
+                .iter()
+                .find(|m| m.torn_id == 4)
+                .unwrap()
+                .flat_bonus,
+            0
+        );
         assert_eq!(r.flat_bonus_total, 5000);
     }
 }
