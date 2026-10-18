@@ -1,18 +1,20 @@
 # MobHub
 
-Native Rust rewrite of the MobHub faction operations engine for Torn City.
+A faction operations tool for the online game Torn City: war payouts, faction valuation, gym training simulation and money-log reconciliation, as one Rust program with a built-in web dashboard and an SQLite database. It replaces an earlier Node.js/Next.js version.
 
-Replaces the legacy Node.js/Next.js implementation with compiled native binaries and embedded SQLite persistence.
+MobHub is a side project kept in the AIEN organization on GitHub. It is not part of the AIEN stack. For the project itself, start at [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN.
 
-## Architectural Highlights
+**Status (2026-10-18): quiet.** The last code change was on 2026-10-15, when the gym and payout engines were moved fully into Rust. Since then only a security update of the TLS library (2026-10-17). The Torn API client is written but no command or route calls it yet.
 
-- **Pure Native Execution**: Built with native Rust (Axum, Tokio, SQLite). Zero Node.js or Python daemons required.
+## What it does
+
+- **One Rust program**: built with Axum, Tokio and SQLite. No Node.js or Python is needed to run it.
 - **MobPay Payout Engine**: Deterministic calculation engine supporting flat-rate respect-based and pool-share hit-based models. `test_ganja_warriors_ground_truth` in `src/payout.rs` checks it against per-member payouts from the GanjaWarriors war (cache 349,499,999), within 2,000 per member and 50 on the total. Rounding drift is reconciled to the pool target by default for pool-share and on request (`reconcile_drift`) for flat-rate.
 - **Disbursement & Money-Log Reconciliation**: Parses Torn depositFunds money-log news entries (with automatic OC-cut exclusion) and matches them to unpaid payout register rows (exact amount first, then within a tolerance), reporting a match decision for each entry.
 - **MobWorth Valuation**: Faction net worth as respect x rate + armory value + faction cash. Armory value and cash are supplied by the caller; `src/valuation.rs` also has a parser for spendable cash (vault total minus member deposits) that nothing calls yet.
 - **MobGym Engine**: Vladar Training Formula V2.0 for single-train and multi-train sessions with happy decay, in native Rust (`src/gym.rs`). `mobhub gym` and `/api/gym/simulate` both run this engine.
 - **Hardware TPM Key Vault**: The Torn API key is resolved in memory by running `atlas-vault get TORN_API_KEY` (the vault tool, TPM-bound on the DGX Spark), with the `TORN_API_KEY` environment variable as fallback. MobHub writes no credential files, and log output redacts the key. The Torn API client in `src/torn.rs` is not called by any command or route yet; today the key only drives the vault status shown by `test-vault`, `doctor`, `/status` and the dashboard.
-- **Embedded Web Dashboard**: Self-contained web UI served directly from Axum with zero external CDN or npm package dependencies.
+- **Embedded Web Dashboard**: a self-contained web page served by the program itself, with no outside CDN or npm packages.
 
 ## Installation and Build
 
