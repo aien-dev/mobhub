@@ -1,0 +1,21 @@
+# tests/gates/mobhub-fmt.gate
+gate: MOBHUB-FMT
+manifest_version: 2
+owner: mobhub
+requires:
+  - host
+inputs:
+  - Cargo.toml
+  - Cargo.lock
+  - src/
+  - tests/
+  - tests/gates/
+run:
+  exec: tests/gates/run.sh
+  args: ["fmt"]
+expects:
+  exit: 0
+  verdict: PASS
+timeout: 5m
+exactness: EXACT
+cache_scope: portable

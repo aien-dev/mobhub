@@ -1,0 +1,21 @@
+# tests/gates/mobhub-check.gate
+gate: MOBHUB-CHECK
+manifest_version: 2
+owner: mobhub
+requires:
+  - host
+inputs:
+  - Cargo.toml
+  - Cargo.lock
+  - src/
+  - tests/
+  - tests/gates/
+run:
+  exec: tests/gates/run.sh
+  args: ["check"]
+expects:
+  exit: 0
+  verdict: PASS
+timeout: 20m
+exactness: EXACT
+cache_scope: machine
