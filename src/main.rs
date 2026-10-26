@@ -11,6 +11,8 @@ use mobhub::torn::TornClient;
 use mobhub::valuation;
 use mobhub::vault;
 use std::fs;
+use std::net::IpAddr;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
@@ -29,6 +31,9 @@ enum Commands {
     Serve {
         #[arg(short, long, default_value_t = 3000)]
         port: u16,
+        /// Bind address; explicit non-loopback use requires a trusted TLS reverse proxy.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: IpAddr,
 
         #[arg(short, long, default_value = "mobhub.db")]
         db_path: String,
@@ -97,7 +102,7 @@ enum Commands {
         tolerance: f64,
     },
 
-    /// Verify hardware TPM vault key binding in memory
+    /// Report the source of the Torn API key, without exposing its value
     TestVault,
 
     /// Execute comprehensive system diagnostics
@@ -113,9 +118,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Serve {
             port,
+            bind,
             db_path,
             faction_id,
         } => {
+            let access = Arc::new(server::AccessTokens::from_vault()?);
             println!("Initializing MobHub native storage at {}", db_path);
             let storage = Database::open(&db_path)?;
             let torn = TornClient::new();
@@ -123,13 +130,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 storage,
                 torn,
                 faction_id,
+                access,
             };
 
             println!(
                 "Starting MobHub server on port {} (Faction ID: #{})",
                 port, faction_id
             );
-            server::run_server(port, state).await?;
+            server::run_server(port, bind, state).await?;
         }
 
         Commands::Payout {
@@ -227,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 min_happy: None,
             };
 
-            let res = gym::simulate_session(&params);
+            let res = gym::simulate_session(&params)?;
             println!("{}", serde_json::to_string_pretty(&res)?);
         }
 
@@ -266,34 +274,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::TestVault => {
-            println!("Testing Hardware TPM Vault retrieval for TORN_API_KEY...");
-            match vault::get_torn_api_key() {
-                Some(key) => {
-                    let len = key.len();
-                    println!(
-                        "TPM Vault token present: {} bytes in-memory (signature: [REDACTED_BY_ATLAS_VAULT])",
-                        len
-                    );
-                    println!("Disk status: clean SECURE_TPM_ONLY (zero .env files on disk)");
+            println!("Checking TORN_API_KEY source...");
+            match vault::torn_key_source() {
+                Some(vault::SecretSource::AtlasVault) => {
+                    println!("Key available from atlas-vault")
                 }
-                None => {
-                    println!("WARNING: TORN_API_KEY not found in TPM vault or environment");
+                Some(vault::SecretSource::Environment) => {
+                    println!("Key available from process environment")
                 }
+                None => println!("TORN_API_KEY unavailable"),
             }
         }
 
         Commands::Doctor => {
-            println!("Running MobHub diagnostics on NVIDIA DGX Spark...");
+            println!("Running MobHub diagnostics...");
 
-            // 1. Check TPM Vault
-            let vault_status = if vault::is_torn_key_present() {
-                "[OK] Hardware TPM Vault key resolved in-memory"
-            } else {
-                "[WARN] Hardware TPM Vault key not present"
+            let key_status = match vault::torn_key_source() {
+                Some(vault::SecretSource::AtlasVault) => "[OK] Torn key from atlas-vault",
+                Some(vault::SecretSource::Environment) => "[OK] Torn key from process environment",
+                None => "[WARN] Torn key unavailable",
             };
-            println!("- TPM Vault: {}", vault_status);
+            println!("- Torn key: {}", key_status);
 
-            // 2. Check SQLite in-memory and disk
+            // Check SQLite in-memory.
             let db = Database::open_in_memory();
             let db_status = match db {
                 Ok(_) => "[OK] SQLite engine active (WAL mode supported)",
@@ -301,12 +304,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             println!("- Database: {}", db_status);
 
-            // 3. Check reconciliation engine
             let dummy_news = serde_json::json!({ "news": [] });
             let _ = reconcile::parse_disbursements(&dummy_news);
             println!("- Reconcile Engine: [OK] In-memory disbursement parser verified");
 
-            println!("Doctor inspection complete: all core native systems operational.");
+            println!("Doctor inspection complete.");
         }
     }
 

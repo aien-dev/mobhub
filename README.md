@@ -4,7 +4,7 @@ A faction operations tool for the online game Torn City: war payouts, faction va
 
 MobHub is a side project kept in the AIEN organization on GitHub. It is not part of the AIEN stack. For the project itself, start at [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN.
 
-**Status (2026-10-18): quiet.** The last code change was on 2026-10-15, when the gym and payout engines were moved fully into Rust. Since then only a security update of the TLS library (2026-10-17). The Torn API client is written but no command or route calls it yet.
+**Status: maintenance.** The gym and payout engines run in Rust. The Torn API client is written but no command or route calls it yet. The service binds loopback by default and requires scoped tokens for API access; the lockfile pins rustls-webpki 0.103.16 for RUSTSEC-2026-0382.
 
 ## What it does
 
@@ -13,7 +13,7 @@ MobHub is a side project kept in the AIEN organization on GitHub. It is not part
 - **Disbursement & Money-Log Reconciliation**: Parses Torn depositFunds money-log news entries (with automatic OC-cut exclusion) and matches them to unpaid payout register rows (exact amount first, then within a tolerance), reporting a match decision for each entry.
 - **MobWorth Valuation**: Faction net worth as respect x rate + armory value + faction cash. Armory value and cash are supplied by the caller; `src/valuation.rs` also has a parser for spendable cash (vault total minus member deposits) that nothing calls yet.
 - **MobGym Engine**: Vladar Training Formula V2.0 for single-train and multi-train sessions with happy decay, in native Rust (`src/gym.rs`). `mobhub gym` and `/api/gym/simulate` both run this engine.
-- **Hardware TPM Key Vault**: The Torn API key is resolved in memory by running `atlas-vault get TORN_API_KEY` (the vault tool, TPM-bound on the DGX Spark), with the `TORN_API_KEY` environment variable as fallback. MobHub writes no credential files, and log output redacts the key. The Torn API client in `src/torn.rs` is not called by any command or route yet; today the key only drives the vault status shown by `test-vault`, `doctor`, `/status` and the dashboard.
+- **Torn API credential source**: `atlas-vault get TORN_API_KEY` is preferred; the `TORN_API_KEY` process environment is a fallback. `/status`, `test-vault` and `doctor` identify which source supplied the key. They do not certify TPM binding for an environment key or inspect disk contents.
 - **Embedded Web Dashboard**: a self-contained web page served by the program itself, with no outside CDN or npm packages.
 
 ## Installation and Build
@@ -36,7 +36,7 @@ Compiled binary will be available at `target/release/mobhub`.
 ./target/release/mobhub doctor
 ```
 
-### TPM Vault Verification
+### Torn API Key Source
 ```bash
 ./target/release/mobhub test-vault
 ```
@@ -64,29 +64,34 @@ Compiled binary will be available at `target/release/mobhub`.
 ```
 
 ### Run HTTP Service & Embedded Dashboard
+
+Before serving, provision distinct `MOBHUB_READ_TOKEN` and `MOBHUB_WRITE_TOKEN` values through `atlas-vault get` (or process environment for isolated tests). Each token must contain at least 32 printable ASCII bytes, with no whitespace. Startup fails closed if either is absent, weak or identical. The read token permits `GET /status` and `GET /api/*`; the write token permits both reads and all `POST /api/*`. Send `Authorization: Bearer <token>` on every protected request. `/health` and the static dashboard at `/` require no token; the dashboard holds its write token only in its password field and sends it explicitly on API calls. Do not put tokens in URLs, committed config or browser storage.
+
+The service binds `127.0.0.1` by default:
 ```bash
 ./target/release/mobhub serve --port 3000 --db-path mobhub.db --faction-id 50645
 ```
 
+`--bind` explicitly overrides the address. Non-loopback use requires a trusted TLS reverse proxy and network access controls, since bearer tokens otherwise cross plaintext HTTP. Cross-origin API access is disabled by default; set `MOBHUB_MANAGEMENT_ORIGIN` to one exact trusted `https://host[:port]` origin if a separate management UI needs CORS. The origin is not an authorization grant. The dashboard served from the same origin does not require CORS. Gym requests reject non-finite/out-of-range parameters and sessions exceeding 10,000 trains; at most two gym simulations occupy blocking workers at once.
 ## API Endpoints
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | System health check |
-| `GET` | `/status` | Vault status, service name and version |
+| `GET` | `/status` | Credential source, service name and version (read or write token) |
 | `POST` | `/api/payout/compute` | Run deterministic war payout calculation |
 | `POST` | `/api/payout/export-csv` | Export payout register as CSV |
 | `POST` | `/api/valuation/compute` | Calculate faction valuation breakdown |
 | `POST` | `/api/gym/simulate` | Simulate gym session with the Rust engine |
 | `POST` | `/api/reconcile/parse` | Parse raw Torn news to disbursements |
 | `POST` | `/api/reconcile/match` | Match disbursements to payout register rows |
-| `GET` | `/api/disbursements` | List stored disbursements |
-| `POST` | `/api/disbursements` | Store disbursements into SQLite |
-| `GET` | `/api/wars` | List archived wars from SQLite |
-| `POST` | `/api/wars` | Record or import war |
-| `GET` | `/api/wars/:id` | Fetch one archived war (404 if not found) |
-| `GET` | `/api/balances` | List stored member balances from SQLite (no route or command writes them yet) |
-| `GET` | `/` | Embedded web management dashboard |
+| `GET` | `/api/disbursements` | List stored disbursements (read or write token) |
+| `POST` | `/api/disbursements` | Store disbursements into SQLite (write token) |
+| `GET` | `/api/wars` | List archived wars from SQLite (read or write token) |
+| `POST` | `/api/wars` | Record or import war (write token) |
+| `GET` | `/api/wars/:id` | Fetch one archived war (404 if not found; read or write token) |
+| `GET` | `/api/balances` | List stored member balances from SQLite (read or write token; no route or command writes them yet) |
+| `GET` | `/` | Public static embedded web dashboard; API calls require write token |
 
 ## Test Verification
 
