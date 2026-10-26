@@ -179,6 +179,20 @@ async fn private_records_require_authorization_before_read_or_write() {
         storage.get_war(10).unwrap().is_none(),
         "unauthorized write changed storage"
     );
+    let disbursement = json!({"news_id":"unauthorized-1", "war_id":null,
+        "recipient_torn_id":123, "recipient_name":"recipient", "amount":999,
+        "occurred_at":null, "matched_register_id":null, "raw_text":"bank"});
+    let write = Request::builder()
+        .method("POST")
+        .uri("/api/disbursements")
+        .header("content-type", "application/json")
+        .body(Body::from(disbursement.to_string()))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(write).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(storage.list_disbursements(None).unwrap().is_empty());
     for uri in [
         "/api/wars",
         "/api/disbursements",
