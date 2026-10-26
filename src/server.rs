@@ -11,15 +11,16 @@ use crate::valuation::{self, ValuationBreakdown};
 use crate::vault;
 
 use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
-use axum::response::{Html, IntoResponse, Json};
+use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{http::Request, Router};
 use serde::Deserialize;
 use serde_json::json;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
@@ -27,6 +28,96 @@ pub struct AppState {
     pub storage: Database,
     pub torn: TornClient,
     pub faction_id: i64,
+    pub access: Arc<AccessTokens>,
+}
+
+#[derive(Clone)]
+pub struct AccessTokens {
+    read: String,
+    write: String,
+    management_origin: Option<HeaderValue>,
+}
+
+impl AccessTokens {
+    pub fn new(
+        read: String,
+        write: String,
+        management_origin: Option<&str>,
+    ) -> Result<Self, String> {
+        if read.len() < 32
+            || write.len() < 32
+            || read == write
+            || !read.bytes().all(|c| c.is_ascii_graphic())
+            || !write.bytes().all(|c| c.is_ascii_graphic())
+        {
+            return Err(
+                "distinct read/write tokens of at least 32 printable ASCII bytes are required"
+                    .into(),
+            );
+        }
+        let management_origin = management_origin.map(|value| {
+            let url = url::Url::parse(value).map_err(|_| "invalid management origin")?;
+            if !matches!(url.scheme(), "http" | "https")
+                || url.host_str().is_none() || url.path() != "/" || url.query().is_some()
+                || url.fragment().is_some() || !url.username().is_empty() || url.password().is_some()
+                || url.origin().ascii_serialization() != value
+            {
+                return Err("management origin must be an exact http(s) origin without credentials or path");
+            }
+            HeaderValue::from_str(value).map_err(|_| "invalid management origin header")
+        }).transpose()?;
+        Ok(Self {
+            read,
+            write,
+            management_origin,
+        })
+    }
+
+    pub fn from_vault() -> Result<Self, String> {
+        let read =
+            vault::resolve_secret("MOBHUB_READ_TOKEN").ok_or("MOBHUB_READ_TOKEN is missing")?;
+        let write =
+            vault::resolve_secret("MOBHUB_WRITE_TOKEN").ok_or("MOBHUB_WRITE_TOKEN is missing")?;
+        Self::new(
+            read,
+            write,
+            std::env::var("MOBHUB_MANAGEMENT_ORIGIN").ok().as_deref(),
+        )
+    }
+}
+
+fn token_matches(candidate: &str, expected: &str) -> bool {
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    let difference = candidate
+        .bytes()
+        .zip(expected.bytes())
+        .fold(0u8, |diff, (a, b)| diff | (a ^ b));
+    difference == 0
+}
+
+async fn authorize(
+    State(tokens): State<Arc<AccessTokens>>,
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    let credential = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let allowed = match credential {
+        Some(token) if token_matches(token, &tokens.write) => true,
+        Some(token) if request.method() == Method::GET && token_matches(token, &tokens.read) => {
+            true
+        }
+        _ => false,
+    };
+    if !allowed {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    next.run(request).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,9 +157,11 @@ pub struct DisbursementsQuery {
 }
 
 pub fn create_router(state: AppState) -> Router {
-    Router::new()
+    let tokens = state.access.clone();
+    let mut app = Router::new()
         .route("/", get(dashboard_handler))
-        .route("/health", get(health_handler))
+        .route("/health", get(health_handler));
+    let private = Router::new()
         .route("/status", get(status_handler))
         .route("/api/payout/compute", post(payout_compute_handler))
         .route("/api/payout/export-csv", post(payout_csv_handler))
@@ -83,14 +176,29 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/wars", get(list_wars_handler).post(create_war_handler))
         .route("/api/wars/:id", get(get_war_handler))
         .route("/api/balances", get(list_balances_handler))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn_with_state(tokens.clone(), authorize));
+    app = app.merge(private);
+    if let Some(origin) = tokens.management_origin.clone() {
+        app = app.layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::predicate(move |candidate, _| {
+                    candidate == origin
+                }))
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
+        );
+    }
+    app.layer(TraceLayer::new_for_http())
         .with_state(Arc::new(state))
 }
 
-pub async fn run_server(port: u16, state: AppState) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(
+    port: u16,
+    bind: IpAddr,
+    state: AppState,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_router(state);
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::from((bind, port));
     tracing::info!("MobHub native server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -108,11 +216,15 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 async fn status_handler() -> impl IntoResponse {
-    let tpm_active = vault::is_torn_key_present();
+    let key_source = match vault::torn_key_source() {
+        Some(vault::SecretSource::AtlasVault) => "atlas-vault",
+        Some(vault::SecretSource::Environment) => "environment",
+        None => "absent",
+    };
     Json(json!({
         "status": "ok",
         "service": "mobhub",
-        "tpm_vault_active": tpm_active,
+        "torn_key_source": key_source,
         "runtime": "native-arm64-rust",
         "version": env!("CARGO_PKG_VERSION")
     }))
@@ -154,9 +266,24 @@ async fn valuation_compute_handler(Json(req): Json<ValuationRequest>) -> Json<Va
     Json(res)
 }
 
-async fn gym_simulate_handler(Json(req): Json<SessionParams>) -> Json<gym::SessionResult> {
-    let res = gym::simulate_session(&req);
-    Json(res)
+async fn gym_simulate_handler(
+    Json(req): Json<SessionParams>,
+) -> Result<Json<gym::SessionResult>, (StatusCode, &'static str)> {
+    gym::validate_session(&req).map_err(|message| (StatusCode::BAD_REQUEST, message))?;
+    static GYM_SLOTS: std::sync::LazyLock<Arc<tokio::sync::Semaphore>> =
+        std::sync::LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(2)));
+    let permit = GYM_SLOTS
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "gym workers busy"))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        gym::simulate_session(&req)
+    })
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "gym worker failed"))?
+    .map(Json)
+    .map_err(|message| (StatusCode::BAD_REQUEST, message))
 }
 
 async fn reconcile_parse_handler(
@@ -282,13 +409,6 @@ async fn list_balances_handler(
 }
 
 async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
-    let tpm_active = vault::is_torn_key_present();
-    let status_badge = if tpm_active {
-        r#"<span class="badge active">TPM Vault Active</span>"#
-    } else {
-        r#"<span class="badge warn">Vault Unbound</span>"#
-    };
-
     let html = format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -411,7 +531,8 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
     <div class="header">
         <h1>MobHub Sovereign Faction Suite</h1>
         <div>
-            {status_badge}
+            <label for="writeToken">Write token (held in this page only)</label>
+            <input type="password" id="writeToken" autocomplete="off">
             <span style="margin-left: 0.8rem; font-size: 0.85rem; color: var(--text-dim);">Faction: #{faction_id}</span>
         </div>
     </div>
@@ -504,7 +625,7 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
             try {{
                 const res = await fetch('/api/payout/compute', {{
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
+                    headers: {{ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + document.getElementById('writeToken').value }},
                     body: JSON.stringify(payload)
                 }});
                 const data = await res.json();
@@ -523,7 +644,7 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
             try {{
                 const res = await fetch('/api/valuation/compute', {{
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
+                    headers: {{ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + document.getElementById('writeToken').value }},
                     body: JSON.stringify({{ respect: r, respect_rate: rate, armory_value: a, faction_cash: c }})
                 }});
                 const data = await res.json();
@@ -543,7 +664,7 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
             try {{
                 const res = await fetch('/api/gym/simulate', {{
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
+                    headers: {{ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + document.getElementById('writeToken').value }},
                     body: JSON.stringify({{
                         stat: stat,
                         start_stat: s,
@@ -563,7 +684,6 @@ async fn dashboard_handler(State(state): State<Arc<AppState>>) -> Html<String> {
     </script>
 </body>
 </html>"#,
-        status_badge = status_badge,
         faction_id = state.faction_id
     );
 

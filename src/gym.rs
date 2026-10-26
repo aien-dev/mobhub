@@ -142,8 +142,40 @@ pub struct SessionResult {
     pub average_gain_per_train: f64,
 }
 
+pub const MAX_TRAINS: usize = 10_000;
+
+/// Reject unbounded work and values that could produce non-finite gains.
+pub fn validate_session(p: &SessionParams) -> Result<(), &'static str> {
+    if !p.start_stat.is_finite()
+        || !(0.0..=1.0e12).contains(&p.start_stat)
+        || !p.start_happy.is_finite()
+        || !(0.0..=HAPPY_MAX).contains(&p.start_happy)
+        || !p.energy_available.is_finite()
+        || !(0.0..=1.0e6).contains(&p.energy_available)
+        || !p.energy_per_train.is_finite()
+        || !(0.001..=1.0e6).contains(&p.energy_per_train)
+        || !p.gym_dots.is_finite()
+        || !(0.0..=100.0).contains(&p.gym_dots)
+        || p.perk_bonuses.len() > 32
+        || p.perk_bonuses
+            .iter()
+            .any(|v| !v.is_finite() || !(-0.99..=10.0).contains(v))
+        || p.happy_loss_per_train
+            .is_some_and(|v| !v.is_finite() || !(0.0..=1.0e6).contains(&v))
+        || p.min_happy
+            .is_some_and(|v| !v.is_finite() || !(0.0..=HAPPY_MAX).contains(&v))
+    {
+        return Err("gym values must be finite and within supported ranges");
+    }
+    if p.energy_available / p.energy_per_train > MAX_TRAINS as f64 {
+        return Err("gym session exceeds the training work limit");
+    }
+    Ok(())
+}
+
 /// Simulate a full training session with decaying happy.
-pub fn simulate_session(p: &SessionParams) -> SessionResult {
+pub fn simulate_session(p: &SessionParams) -> Result<SessionResult, &'static str> {
+    validate_session(p)?;
     let loss = p.happy_loss_per_train.unwrap_or(0.5 * p.energy_per_train);
     let min_h = p.min_happy.unwrap_or(0.0);
 
@@ -153,7 +185,7 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
     let mut trains = 0;
     let mut total_gain = 0.0;
 
-    let p_gain = GainParams {
+    let mut p_gain = GainParams {
         stat: p.stat,
         stat_value: stat,
         happy,
@@ -162,12 +194,13 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
         perk_bonuses: p.perk_bonuses.clone(),
     };
 
-    while energy >= p.energy_per_train {
-        let mut curr_p = p_gain.clone();
-        curr_p.stat_value = stat;
-        curr_p.happy = happy;
-
-        let gain = expected_gain_per_train(&curr_p);
+    for _ in 0..MAX_TRAINS {
+        if energy < p.energy_per_train {
+            break;
+        }
+        p_gain.stat_value = stat;
+        p_gain.happy = happy;
+        let gain = expected_gain_per_train(&p_gain);
         stat += gain;
         total_gain += gain;
         happy = (happy - loss).max(min_h);
@@ -175,7 +208,7 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
         trains += 1;
     }
 
-    SessionResult {
+    Ok(SessionResult {
         trains,
         energy_spent: (trains as f64) * p.energy_per_train,
         total_gain,
@@ -187,7 +220,7 @@ pub fn simulate_session(p: &SessionParams) -> SessionResult {
         } else {
             0.0
         },
-    }
+    })
 }
 
 #[cfg(test)]
@@ -246,7 +279,7 @@ mod tests {
             happy_loss_per_train: Some(2.5),
             min_happy: Some(0.0),
         };
-        let res = simulate_session(&p);
+        let res = simulate_session(&p).unwrap();
         assert_eq!(res.trains, 20);
         assert_eq!(res.energy_spent, 100.0);
         assert_eq!(res.end_happy, 5000.0 - 20.0 * 2.5);

@@ -1,6 +1,6 @@
 //! Torn API v2 client in native Rust.
 //! Includes sliding-window rate limiting, exponential backoff, concurrency caps,
-//! in-memory caching, and dynamic Hardware TPM Vault integration.
+//! in-memory caching, and dynamic vault/environment credential resolution.
 
 use crate::vault;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};

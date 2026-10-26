@@ -5,11 +5,235 @@ use axum::http::{Request, StatusCode};
 use mobhub::gym::{SessionParams, StatName};
 use mobhub::payout::{MemberInput, PayoutModel, PayoutOptions, PayoutPolicy};
 use mobhub::reconcile::{GiveForMatch, RegisterRowForMatch};
-use mobhub::server::{create_router, AppState};
+use mobhub::server::{create_router, AccessTokens, AppState};
 use mobhub::storage::Database;
 use mobhub::torn::TornClient;
 use serde_json::json;
+use std::sync::Arc;
 use tower::ServiceExt;
+
+fn access(origin: Option<&str>) -> Arc<AccessTokens> {
+    Arc::new(AccessTokens::new("r".repeat(32), "w".repeat(32), origin).unwrap())
+}
+
+#[test]
+fn gym_rejects_non_progress_and_nonfinite_inputs() {
+    let params = SessionParams {
+        stat: StatName::Strength,
+        start_stat: 100.0,
+        start_happy: 100.0,
+        energy_available: 10.0,
+        energy_per_train: 0.0,
+        gym_dots: 7.0,
+        perk_bonuses: vec![],
+        happy_loss_per_train: None,
+        min_happy: None,
+    };
+    assert!(mobhub::gym::validate_session(&params).is_err());
+    let mut negative = params.clone();
+    negative.energy_per_train = -1.0;
+    assert!(mobhub::gym::validate_session(&negative).is_err());
+    let mut huge = params.clone();
+    huge.energy_per_train = f64::MIN_POSITIVE;
+    assert!(mobhub::gym::validate_session(&huge).is_err());
+    let mut nonfinite = params.clone();
+    nonfinite.start_stat = f64::INFINITY;
+    assert!(mobhub::gym::validate_session(&nonfinite).is_err());
+}
+
+#[tokio::test]
+async fn scoped_tokens_allow_reads_and_only_write_token_mutates() {
+    let storage = Database::open_in_memory().unwrap();
+    let app = create_router(AppState {
+        storage: storage.clone(),
+        torn: TornClient::new_mock(),
+        faction_id: 50645,
+        access: access(None),
+    });
+    let war =
+        json!({"id": 10, "name": "original", "cache_value": 42, "status": "active", "data": {}});
+    for (token, expected) in [
+        ("r".repeat(32), StatusCode::UNAUTHORIZED),
+        ("invalid".to_string(), StatusCode::UNAUTHORIZED),
+        ("w".repeat(32), StatusCode::CREATED),
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/wars")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::from(war.to_string()))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            expected
+        );
+    }
+    assert_eq!(storage.get_war(10).unwrap().unwrap().name, "original");
+    let overwrite =
+        json!({"id": 10, "name": "changed", "cache_value": 42, "status": "active", "data": {}});
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/wars")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", "r".repeat(32)))
+        .body(Body::from(overwrite.to_string()))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(storage.get_war(10).unwrap().unwrap().name, "original");
+    for token in ["r".repeat(32), "w".repeat(32)] {
+        let request = Request::builder()
+            .uri("/api/wars")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::OK
+        );
+    }
+}
+
+#[tokio::test]
+async fn gym_api_rejects_bad_inputs_before_worker_admission() {
+    let app = create_router(AppState {
+        storage: Database::open_in_memory().unwrap(),
+        torn: TornClient::new_mock(),
+        faction_id: 50645,
+        access: access(None),
+    });
+    let mut payload = json!({"stat":"strength", "start_stat":100, "start_happy":100,
+        "energy_available":10, "energy_per_train":0, "gym_dots":7});
+    for step in [0.0, -1.0, 0.000001] {
+        payload["energy_per_train"] = json!(step);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/gym/simulate")
+            .header("authorization", format!("Bearer {}", "w".repeat(32)))
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    payload["energy_per_train"] = json!(1);
+    payload["energy_available"] = json!(10001);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/gym/simulate")
+        .header("authorization", format!("Bearer {}", "w".repeat(32)))
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[test]
+fn access_configuration_fails_closed() {
+    assert!(AccessTokens::new("short".into(), "w".repeat(32), None).is_err());
+    assert!(AccessTokens::new("r".repeat(32), "r".repeat(32), None).is_err());
+    assert!(AccessTokens::new(
+        "r".repeat(32),
+        "w".repeat(32),
+        Some("https://trusted.invalid/path")
+    )
+    .is_err());
+    assert!(AccessTokens::new(
+        "r".repeat(32),
+        "w".repeat(32),
+        Some("https://trusted.invalid")
+    )
+    .is_ok());
+}
+
+#[tokio::test]
+async fn private_records_require_authorization_before_read_or_write() {
+    let storage = Database::open_in_memory().unwrap();
+    let app = create_router(AppState {
+        storage: storage.clone(),
+        torn: TornClient::new_mock(),
+        faction_id: 50645,
+        access: access(None),
+    });
+    let war =
+        json!({"id": 10, "name": "private", "cache_value": 42, "status": "active", "data": {}});
+    let write = Request::builder()
+        .method("POST")
+        .uri("/api/wars")
+        .header("content-type", "application/json")
+        .body(Body::from(war.to_string()))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(write).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        storage.get_war(10).unwrap().is_none(),
+        "unauthorized write changed storage"
+    );
+    for uri in [
+        "/api/wars",
+        "/api/disbursements",
+        "/api/balances",
+        "/api/wars/10",
+    ] {
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED,
+            "{uri}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn browser_origin_is_not_permissive() {
+    let app = create_router(AppState {
+        storage: Database::open_in_memory().unwrap(),
+        torn: TornClient::new_mock(),
+        faction_id: 50645,
+        access: access(Some("https://trusted.invalid")),
+    });
+    let request = Request::builder()
+        .method("OPTIONS")
+        .uri("/api/wars")
+        .header("origin", "https://attacker.invalid")
+        .header("access-control-request-method", "POST")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert!(response
+        .headers()
+        .get("access-control-allow-origin")
+        .is_none());
+    let request = Request::builder()
+        .method("OPTIONS")
+        .uri("/api/wars")
+        .header("origin", "https://trusted.invalid")
+        .header("access-control-request-method", "POST")
+        .header(
+            "access-control-request-headers",
+            "authorization,content-type",
+        )
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(
+        response
+            .headers()
+            .get("access-control-allow-origin")
+            .unwrap(),
+        "https://trusted.invalid"
+    );
+}
 
 #[tokio::test]
 async fn test_full_router_integration() {
@@ -19,6 +243,7 @@ async fn test_full_router_integration() {
         storage,
         torn,
         faction_id: 50645,
+        access: access(None),
     };
     let app = create_router(state);
 
@@ -41,6 +266,7 @@ async fn test_full_router_integration() {
         .oneshot(
             Request::builder()
                 .uri("/status")
+                .header("authorization", format!("Bearer {}", "r".repeat(32)))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -98,6 +324,7 @@ async fn test_full_router_integration() {
                 .method("POST")
                 .uri("/api/payout/compute")
                 .header("Content-Type", "application/json")
+                .header("authorization", format!("Bearer {}", "w".repeat(32)))
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
         )
@@ -126,6 +353,7 @@ async fn test_full_router_integration() {
                 .method("POST")
                 .uri("/api/valuation/compute")
                 .header("Content-Type", "application/json")
+                .header("authorization", format!("Bearer {}", "w".repeat(32)))
                 .body(Body::from(val_payload.to_string()))
                 .unwrap(),
         )
@@ -160,6 +388,7 @@ async fn test_full_router_integration() {
                 .method("POST")
                 .uri("/api/gym/simulate")
                 .header("Content-Type", "application/json")
+                .header("authorization", format!("Bearer {}", "w".repeat(32)))
                 .body(Body::from(gym_payload.to_string()))
                 .unwrap(),
         )
@@ -187,6 +416,7 @@ async fn test_full_router_integration() {
                 .method("POST")
                 .uri("/api/reconcile/parse")
                 .header("Content-Type", "application/json")
+                .header("authorization", format!("Bearer {}", "w".repeat(32)))
                 .body(Body::from(news_payload.to_string()))
                 .unwrap(),
         )
@@ -216,6 +446,7 @@ async fn test_full_router_integration() {
                 .method("POST")
                 .uri("/api/reconcile/match")
                 .header("Content-Type", "application/json")
+                .header("authorization", format!("Bearer {}", "w".repeat(32)))
                 .body(Body::from(match_payload.to_string()))
                 .unwrap(),
         )
