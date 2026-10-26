@@ -104,10 +104,8 @@ The payout engine is tested against GanjaWarriors war data and the gym formula a
 
 ## License and Governance
 
-Licensed under the **Sovereign Resource Commons License 1.0 (SRCL-1.0)**: Apache-2.0 with the LLVM exception, plus the Sovereign Reciprocal Commons Rider in [LICENSE](LICENSE). The Rider requires public release of direct source modifications deployed as a public or commercial networked service (Section 11) and requires an enterprise above 25 million USD that trains an AI model on this work to publish the resulting model weights (Section 12).
-Copyright (c) 2026 Drake Stapleton (Operator & Lead AI Architect) <drake.aien@proton.me>.
-All rights reserved.
+Licensed under the Apache License, Version 2.0 with LLVM Exceptions (`Apache-2.0 WITH LLVM-exception`); see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-Authored and architected in cognitive partnership with AIEN (Autonomous Cognitive Architecture operating on the Atlas Framework). All legal rights, title, copyright, and licensing authority reside exclusively in Drake Stapleton.
+Authored by Drake Stapleton with AIEN agents. Contact: drake@aienos.com.
 
 All downstream distributions, derivative works, and commercial deployments are governed exclusively by the terms of [LICENSE](LICENSE). [CONSTITUTION.md](CONSTITUTION.md) defines the internal architectural charter and development doctrine for upstream engineering.
