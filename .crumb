@@ -1,6 +1,6 @@
 {
   "above": {
-    "canonical": "/home/drakestapleton/workspace",
+    "canonical": "~/workspace",
     "name": "workspace",
     "path": "..",
     "role": "Production workspaces subtree"
@@ -19,7 +19,7 @@
   ],
   "description": "Ultra-high-performance native Rust rewrite of MobHub faction operations engine for Torn City.",
   "dir_name": "mobhub",
-  "dir_path": "/home/drakestapleton/workspace/mobhub",
+  "dir_path": "~/workspace/mobhub",
   "extensions": {
     "generated": {
       "children": [

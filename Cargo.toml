@@ -2,7 +2,7 @@
 name = "mobhub"
 version = "0.1.0"
 edition = "2021"
-authors = ["Drake Stapleton <drake.aien@proton.me>"]
+authors = ["Drake Stapleton <drake@aienos.com>"]
 description = "Ultra-high-performance native Rust rewrite of MobHub faction operations engine for Torn City"
 license = "Apache-2.0 WITH LLVM-exception"
 
