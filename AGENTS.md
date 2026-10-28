@@ -2,6 +2,12 @@
 Version 1.0 (September 2026)
 Reference Guide for Humans and Collaborating AI Agents
 
+Current development follows [Human-Directed Agentic Engineering (HDAE)](README.md#human-directed-agentic-engineering).
+Humans define goals, architecture, constraints, acceptance criteria and stopping points;
+agents implement, execute checks, diagnose failures and revise within those boundaries.
+Human review retains responsibility for claims, acceptance and release decisions.
+The README cites Gregory M. Kurtzer's documented method and systems-software case study (2026).
+
 ## 1. The Sovereign Voice Invariant
 All communication, documentation, commits, and agent prompts must strictly adhere to the unslop standard:
 - **Zero Em Dashes and En Dashes**: Never use em dashes or en dashes for pauses or clauses. Use standard commas, colons, parentheses, or periods. Use plain hyphens only for CLI flags or compound terms.

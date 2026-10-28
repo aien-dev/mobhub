@@ -109,3 +109,14 @@ Licensed under the Apache License, Version 2.0 with LLVM Exceptions (`Apache-2.0
 Authored by Drake Stapleton with AIEN agents. Contact: drake@aienos.com.
 
 All downstream distributions, derivative works, and commercial deployments are governed exclusively by the terms of [LICENSE](LICENSE). [CONSTITUTION.md](CONSTITUTION.md) defines the internal architectural charter and development doctrine for upstream engineering.
+
+## Human-Directed Agentic Engineering
+
+Development follows Human-Directed Agentic Engineering (HDAE): humans define goals,
+architecture, constraints, acceptance criteria, and stopping points; agents implement,
+execute checks, diagnose failures, and revise within those boundaries. Human review
+retains responsibility for claims, acceptance, and release decisions.
+
+For the documented method and a systems-software case study, see Gregory M. Kurtzer,
+*Ginux: Building an Independent Kernel That Runs Linux Userspace through Human-Directed
+Agentic Engineering* (2026), https://doi.org/10.5281/zenodo.23682548.
