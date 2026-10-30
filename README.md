@@ -2,7 +2,7 @@
 
 A faction operations tool for the online game Torn City: war payouts, faction valuation, gym training simulation and money-log reconciliation, as one Rust program with a built-in web dashboard and an SQLite database. It replaces an earlier Node.js/Next.js version.
 
-MobHub is a side project kept in the AIEN organization on GitHub. It is not part of the AIEN stack. For the project itself, start at [Aienix](https://github.com/aien-dev/aienix), the core tree of AIEN.
+MobHub is a side project kept in the AIEN organization on GitHub. It is not part of the AIEN stack. The whole system is Sovereign Intelligence (SI). [aien-dev/sovereign-intelligence](https://github.com/aien-dev/sovereign-intelligence) is the integration, release and install center and where the signed Spark test runs. AienOS is only the operating-system layer. aien-dev/aienix is retired. Other repositories keep their own parts.
 
 **Status: maintenance.** The gym and payout engines run in Rust. The Torn API client is written but no command or route calls it yet. The service binds loopback by default and requires scoped tokens for API access; the lockfile pins rustls-webpki 0.103.16 for RUSTSEC-2026-0382.
 
